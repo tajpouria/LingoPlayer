@@ -1,0 +1,5 @@
+{
+  "name": "LingoPlayer",
+  "description": "A simple mobile-friendly player that reads words and sentences from a Google Sheet TSV for language learning.",
+  "requestFramePermissions": []
+}
