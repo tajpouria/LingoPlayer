@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipForward, SkipBack, RotateCcw, Volume2, Loader2, Settings2 } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Settings2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Types
@@ -337,15 +337,6 @@ export default function App() {
           >
             <Volume2 className="w-4 h-4" />
             Repeat
-          </button>
-          <button 
-            onClick={() => {
-              setState(prev => ({ ...prev, rowIndex: 0, itemIndex: -1, isPlaying: false }));
-            }}
-            className="flex items-center gap-2 px-6 py-3 rounded-full bg-white border border-zinc-200 text-sm font-medium hover:bg-zinc-50 active:scale-95 transition-all"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Reset
           </button>
         </div>
       </footer>
