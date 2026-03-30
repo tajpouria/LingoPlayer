@@ -20,11 +20,24 @@ interface PlayerState {
   delay: number; // seconds
 }
 
-const TSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRe6opl5ppH_B3r6TIKO0hVNiHkB2By-RuY1kH1sJQG4wHscGtlrxG_UMjWj-RjlxvFjwkBmBFE69Qb/pub?output=tsv';
+interface Deck {
+  name: string;
+  url: string;
+}
+
+// Deck Configuration
+const DECKS: Deck[] = [
+  {
+    name: 'Dutch Vocabulary',
+    url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRe6opl5ppH_B3r6TIKO0hVNiHkB2By-RuY1kH1sJQG4wHscGtlrxG_UMjWj-RjlxvFjwkBmBFE69Qb/pub?output=tsv',
+  },
+  // Add more decks here
+];
 
 export default function App() {
+  const [selectedDeckIndex, setSelectedDeckIndex] = useState<number | null>(null);
   const [data, setData] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<PlayerState>({
     rowIndex: 0,
@@ -40,9 +53,13 @@ export default function App() {
 
   // Fetch Data
   useEffect(() => {
+    if (selectedDeckIndex === null) return;
+
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
       try {
-        const response = await fetch(TSV_URL);
+        const response = await fetch(DECKS[selectedDeckIndex].url);
         if (!response.ok) throw new Error('Failed to fetch data');
         const text = await response.text();
         
@@ -55,6 +72,7 @@ export default function App() {
         }).filter(r => r.word);
 
         setData(rows);
+        setState(prev => ({ ...prev, rowIndex: 0, itemIndex: -1, isPlaying: false }));
         setLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
@@ -63,7 +81,7 @@ export default function App() {
     };
 
     fetchData();
-  }, []);
+  }, [selectedDeckIndex]);
 
   const speak = useCallback((text: string, onEnd?: () => void) => {
     const audio = audioRef.current;
@@ -169,6 +187,38 @@ export default function App() {
     speak(textToSpeak);
   };
 
+  const changeDeck = () => {
+    setSelectedDeckIndex(null);
+    setData([]);
+    setState(prev => ({ ...prev, rowIndex: 0, itemIndex: -1, isPlaying: false }));
+  };
+
+  // Deck Selection Screen
+  if (selectedDeckIndex === null) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 text-zinc-900 p-6">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold mb-2">LingoPlayer</h1>
+            <p className="text-zinc-500">Choose a deck to start learning</p>
+          </div>
+          
+          <div className="space-y-3">
+            {DECKS.map((deck, index) => (
+              <button
+                key={index}
+                onClick={() => setSelectedDeckIndex(index)}
+                className="w-full p-6 bg-white rounded-2xl border-2 border-zinc-200 hover:border-zinc-900 hover:shadow-lg transition-all text-left group"
+              >
+                <h3 className="font-bold text-lg mb-1 group-hover:text-zinc-900">{deck.name}</h3>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 text-zinc-900 p-6">
@@ -208,7 +258,7 @@ export default function App() {
       {/* Header */}
       <header className="p-6 flex justify-between items-center">
         <div>
-          <h1 className="text-xs font-bold uppercase tracking-widest text-zinc-400">LingoPlayer</h1>
+          <h1 className="text-xs font-bold uppercase tracking-widest text-zinc-400">{DECKS[selectedDeckIndex!].name}</h1>
           <p className="text-sm font-medium text-zinc-600">
             {state.rowIndex + 1} of {data.length} words
           </p>
@@ -266,6 +316,19 @@ export default function App() {
             </div>
             
             <div className="space-y-6">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-zinc-400 mb-2">Current Deck</label>
+                <div className="flex items-center gap-3">
+                  <span className="flex-1 text-sm font-medium">{DECKS[selectedDeckIndex!].name}</span>
+                  <button 
+                    onClick={changeDeck}
+                    className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg text-xs font-medium transition-colors"
+                  >
+                    Change Deck
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-[10px] font-bold uppercase text-zinc-400 mb-2">Wait between items</label>
                 <div className="flex items-center gap-4">
