@@ -28,7 +28,7 @@ interface Deck {
 // Deck Configuration
 const DECKS: Deck[] = [
   {
-    name: 'Dutch Vocabulary',
+    name: 'TaalCompleet - A1',
     url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRe6opl5ppH_B3r6TIKO0hVNiHkB2By-RuY1kH1sJQG4wHscGtlrxG_UMjWj-RjlxvFjwkBmBFE69Qb/pub?output=tsv',
   },
   // Add more decks here
@@ -199,7 +199,6 @@ export default function App() {
       <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 text-zinc-900 p-6">
         <div className="max-w-md w-full">
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold mb-2">LingoPlayer</h1>
             <p className="text-zinc-500">Choose a deck to start learning</p>
           </div>
           
