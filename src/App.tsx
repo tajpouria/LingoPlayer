@@ -56,14 +56,50 @@ function addDays(days: number): string {
 function loadSRS(deckName: string): DeckSRS {
   try {
     const raw = localStorage.getItem(`srs_${deckName}`);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    // Support { key, data } wrapper format
+    if (parsed && typeof parsed === 'object' && 'data' in parsed) return parsed.data;
+    return parsed;
   } catch {
     return {};
   }
 }
 
 function saveSRS(deckName: string, srs: DeckSRS): void {
-  localStorage.setItem(`srs_${deckName}`, JSON.stringify(srs));
+  localStorage.setItem(`srs_${deckName}`, JSON.stringify({ key: `srs_${deckName}`, data: srs }));
+}
+
+async function fetchRemoteSRS(deckName: string): Promise<DeckSRS> {
+  try {
+    const res = await fetch(`/api/srs?deck=${encodeURIComponent(deckName)}`);
+    if (!res.ok) return {};
+    const json = await res.json();
+    // Unwrap { key, data } format
+    if (json && typeof json === 'object' && 'data' in json) return json.data;
+    return json;
+  } catch { return {}; }
+}
+
+function saveRemoteSRS(deckName: string, srs: DeckSRS): void {
+  fetch('/api/srs', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deck: deckName, data: srs }),
+  }).catch(() => {});
+}
+
+// Merge two SRS objects — for each word keep the entry with the higher box or newer learnedDate
+function mergeSRS(local: DeckSRS, remote: DeckSRS): DeckSRS {
+  const merged = { ...remote };
+  for (const word of Object.keys(local)) {
+    const l = local[word];
+    const r = merged[word];
+    if (!r || l.box > r.box || (l.box === r.box && l.nextReviewDate > r.nextReviewDate)) {
+      merged[word] = l;
+    }
+  }
+  return merged;
 }
 
 function getNewWords(data: Row[], srs: DeckSRS): Row[] {
@@ -161,6 +197,30 @@ export default function App() {
   const srsRef = useRef<DeckSRS>(srs);
   srsRef.current = srs;
 
+  // SRS remote sync — debounce saves to S3 (30s after last change)
+  const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const srsDirtyRef = useRef(false);
+
+  function markSRSDirty() {
+    srsDirtyRef.current = true;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(flushSRS, 30_000);
+  }
+
+  function flushSRS() {
+    if (!srsDirtyRef.current || selectedDeckIndex === null) return;
+    srsDirtyRef.current = false;
+    if (syncTimerRef.current) { clearTimeout(syncTimerRef.current); syncTimerRef.current = null; }
+    saveRemoteSRS(decks[selectedDeckIndex].name, srsRef.current);
+  }
+
+  // Flush on page unload
+  useEffect(() => {
+    const handleUnload = () => flushSRS();
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  });
+
   // ── Fetch data ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -168,18 +228,30 @@ export default function App() {
     setLoading(true);
     setError(null);
 
-    fetch(decks[selectedDeckIndex].url)
-      .then(res => {
+    const deckName = decks[selectedDeckIndex].name;
+
+    Promise.all([
+      fetch(decks[selectedDeckIndex].url).then(res => {
         if (!res.ok) throw new Error('Failed to fetch data');
         return res.text();
-      })
-      .then(text => {
+      }),
+      fetchRemoteSRS(deckName),
+    ])
+      .then(([text, remoteSRS]) => {
         const rows = text.split('\n').map(line => {
           const parts = line.split('\t').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
           return { word: parts[0] || '', sentences: parts.slice(1) };
         }).filter((r: Row) => r.word);
         setData(rows);
-        setSRS(loadSRS(decks[selectedDeckIndex].name));
+
+        const localSRS = loadSRS(deckName);
+        const merged = mergeSRS(localSRS, remoteSRS);
+        setSRS(merged);
+        saveSRS(deckName, merged);
+        // If remote was stale, push merged version back
+        if (Object.keys(localSRS).length > Object.keys(remoteSRS).length) {
+          saveRemoteSRS(deckName, merged);
+        }
         setLoading(false);
       })
       .catch((err: Error) => {
@@ -213,6 +285,7 @@ export default function App() {
       const newSRS = promoteWord(srsRef.current, word.word, isNewWord);
       setSRS(newSRS);
       saveSRS(decks[selectedDeckIndex!].name, newSRS);
+      markSRSDirty();
     }
 
     const next = idx + 1;
@@ -316,6 +389,7 @@ export default function App() {
 
   function endSession() {
     clearAudio();
+    flushSRS();
     setIsPlaying(false);
     setSessionMode(null);
     setSessionWords([]);
@@ -326,6 +400,7 @@ export default function App() {
   }
 
   function changeDeck() {
+    flushSRS();
     endSession();
     setSelectedDeckIndex(null);
     setData([]);
