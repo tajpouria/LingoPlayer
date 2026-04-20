@@ -17,4 +17,6 @@ export const env = {
   get s3Bucket() { return req('S3_BUCKET'); },
   get s3PathPrefix() { return process.env.S3_PATH_PREFIX || 'users'; },
   get s3Region() { return req('S3_REGION'); },
+  get s3AccessKeyId() { return req('S3_ACCESS_KEY_ID'); },
+  get s3SecretAccessKey() { return req('S3_SECRET_ACCESS_KEY'); },
 };

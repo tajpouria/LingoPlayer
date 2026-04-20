@@ -1,7 +1,13 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { env } from './env';
 
-const s3 = new S3Client({ region: env.s3Region });
+const s3 = new S3Client({
+  region: env.s3Region,
+  credentials: {
+    accessKeyId: env.s3AccessKeyId,
+    secretAccessKey: env.s3SecretAccessKey,
+  },
+});
 
 function safeEmail(email: string): string {
   return email.replace(/[^a-zA-Z0-9@._-]/g, '_');
