@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -106,6 +108,10 @@ function promoteWord(srs: DeckSRS, word: string, isNewWord: boolean): DeckSRS {
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // Hydration guard – defer localStorage reads until client mount
+  const [hasMounted, setHasMounted] = useState(false);
+  useEffect(() => { setHasMounted(true); }, []);
+
   // Deck & data
   const [selectedDeckIndex, setSelectedDeckIndex] = useState<number | null>(null);
   const [data, setData] = useState<Row[]>([]);
@@ -315,7 +321,7 @@ export default function App() {
           <p className="text-zinc-500 text-center mb-8">Choose a deck to start learning</p>
           <div className="space-y-3">
             {DECKS.map((deck, index) => {
-              const deckSRS = loadSRS(deck.name);
+              const deckSRS = hasMounted ? loadSRS(deck.name) : {};
               const reviewCount = (Object.values(deckSRS) as WordSRS[]).filter(w => w.box >= 1 && w.nextReviewDate <= todayStr()).length;
               return (
                 <button
