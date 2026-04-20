@@ -9,8 +9,11 @@ import {
   XCircle,
   Trophy,
   Loader2,
-  ArrowLeft
+  ArrowLeft,
+  Moon,
+  Sun
 } from 'lucide-react';
+import { useDarkMode } from './DarkModeProvider';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +79,7 @@ function parseSentenceId(id: string): { word: string; sentenceIndex: number } {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecallProps) {
+  const { isDark, toggle: toggleDarkMode } = useDarkMode();
   const [recallState, setRecallState] = useState<RecallState | null>(null);
   const [loading, setLoading] = useState(true);
   const [userInput, setUserInput] = useState('');
@@ -408,9 +412,9 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950">
         <Loader2 className="w-12 h-12 animate-spin text-zinc-400 mb-4" />
-        <p className="text-zinc-500">Loading Lingo Recall...</p>
+        <p className="text-zinc-500 dark:text-zinc-400">Loading Lingo Recall...</p>
       </div>
     );
   }
@@ -423,7 +427,7 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
     const overallProgress = allSentences > 0 ? (totalCompleted / allSentences) * 100 : 0;
 
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 p-6">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-6">
         <div className="max-w-md w-full text-center">
           <div className="text-6xl mb-6">🎯</div>
           <h2 className="text-2xl font-bold mb-2">Session Complete!</h2>
@@ -433,18 +437,18 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
               : "Great practice session!"}
           </p>
           
-          <div className="bg-white rounded-2xl border border-zinc-100 p-4 mb-8">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-4 mb-8">
             <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-3">
               Overall Progress
             </p>
             <div className="flex items-center gap-3">
-              <div className="flex-1 h-2 bg-zinc-100 rounded-full overflow-hidden">
+              <div className="flex-1 h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-emerald-500 rounded-full"
                   style={{ width: `${overallProgress}%` }}
                 />
               </div>
-              <span className="text-sm font-medium text-zinc-600">
+              <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
                 {totalCompleted} / {allSentences}
               </span>
             </div>
@@ -452,7 +456,7 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
 
           <button 
             onClick={onBack} 
-            className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-medium"
+            className="w-full py-4 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl font-medium"
           >
             Back to menu
           </button>
@@ -465,16 +469,16 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
 
   if (!currentSentence) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 p-6">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-6">
         <div className="max-w-md w-full text-center">
           <div className="text-6xl mb-6">✨</div>
           <h2 className="text-2xl font-bold mb-2">All Done!</h2>
-          <p className="text-zinc-500 mb-8">
+          <p className="text-zinc-500 dark:text-zinc-400 mb-8">
             You've completed all available sentences. Great job!
           </p>
           <button 
             onClick={onBack} 
-            className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-medium"
+            className="w-full py-4 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl font-medium"
           >
             Back to menu
           </button>
@@ -488,13 +492,13 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
   const hasError = recallState?.dailySession?.attemptedWithMistake.includes(currentSentence.id);
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50 text-zinc-900 font-sans">
+    <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans">
       {/* Header */}
       <header className="p-6 flex justify-between items-center">
         <div>
           <button 
             onClick={onBack}
-            className="flex items-center gap-1 text-zinc-400 hover:text-zinc-600 mb-1 text-sm"
+            className="flex items-center gap-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 mb-1 text-sm"
           >
             <ArrowLeft className="w-4 h-4" />
             Back
@@ -502,16 +506,19 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
           <h1 className="text-xs font-bold uppercase tracking-widest text-zinc-400">
             {deckName}
           </h1>
-          <p className="text-sm font-medium text-zinc-600">
+          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
             {stats.completed + 1} / {stats.total} · Lingo Recall
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 font-semibold flex items-center gap-1">
+          <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
             <Trophy className="w-3 h-3" />
             {stats.perfectToday}
           </span>
-          <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-500 font-semibold flex items-center gap-1">
+          <button onClick={toggleDarkMode} className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors">
+            {isDark ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-zinc-500" />}
+          </button>
+          <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-semibold flex items-center gap-1">
             <Brain className="w-3 h-3" />
             Recall
           </span>
@@ -519,7 +526,7 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
       </header>
 
       {/* Progress bar */}
-      <div className="h-1 bg-zinc-100 mx-6 rounded-full overflow-hidden">
+      <div className="h-1 bg-zinc-100 dark:bg-zinc-800 mx-6 rounded-full overflow-hidden">
         <motion.div
           className="h-full bg-emerald-500 rounded-full"
           animate={{ width: `${progress}%` }}
@@ -528,7 +535,7 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
       </div>
 
       {/* Main content */}
-      <main className="flex-1 flex flex-col px-6 py-8">
+      <main className="flex-1 flex flex-col items-center justify-center px-6 py-8">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentSentence.id}
@@ -536,10 +543,10 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.25 }}
-            className="max-w-lg mx-auto w-full space-y-6"
+            className="max-w-lg w-full space-y-6"
           >
             {/* English sentence to translate */}
-            <div className="bg-white rounded-2xl p-6 border border-zinc-100 shadow-sm space-y-4">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-4">
               <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                 Translate this sentence
               </p>
@@ -549,22 +556,22 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
                   <span className="text-sm">Loading...</span>
                 </div>
               ) : englishTranslation ? (
-                <h2 className="text-2xl font-serif italic leading-relaxed text-zinc-800">
+                <h2 className="text-2xl font-serif italic leading-relaxed text-zinc-800 dark:text-zinc-200">
                   &ldquo;{englishTranslation}&rdquo;
                 </h2>
               ) : (
                 <p className="text-zinc-400 italic">Translation unavailable</p>
               )}
               
-              <div className="flex items-center gap-3 pt-2 border-t border-zinc-100">
+              <div className="flex items-center gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                   Required word:
                 </span>
-                <code className="bg-zinc-900 text-white px-3 py-1.5 rounded-lg text-sm font-mono">
+                <code className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1.5 rounded-lg text-sm font-mono">
                   {currentSentence.word}
                 </code>
                 {hasError && (
-                  <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-600 font-medium">
+                  <span className="text-xs px-2 py-1 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">
                     Already attempted
                   </span>
                 )}
@@ -582,7 +589,7 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
                   onChange={(e) => setUserInput(e.target.value)}
                   disabled={isSubmitting || feedback?.isCorrect}
                   placeholder="Typ je antwoord hier..."
-                  className="w-full bg-white border-2 border-zinc-200 focus:border-zinc-400 rounded-xl p-4 text-lg outline-none transition-colors min-h-[100px] resize-none placeholder:text-zinc-300 disabled:opacity-50"
+                  className="w-full bg-white dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-700 focus:border-zinc-400 dark:focus:border-zinc-500 rounded-xl p-4 text-lg outline-none transition-colors min-h-[100px] resize-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600 disabled:opacity-50"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -596,10 +603,10 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
                 <button
                   onClick={submitAnswer}
                   disabled={isSubmitting || !userInput.trim() || translating || !englishTranslation}
-                  className="w-full py-3.5 bg-zinc-900 text-white rounded-xl font-medium shadow-lg shadow-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all disabled:bg-zinc-300 disabled:shadow-none cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full py-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl font-medium shadow-lg shadow-zinc-200 dark:shadow-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 active:scale-[0.98] transition-all disabled:bg-zinc-300 dark:disabled:bg-zinc-700 disabled:shadow-none cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isSubmitting ? (
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <div className="w-5 h-5 border-2 border-white/30 dark:border-zinc-900/30 border-t-white dark:border-t-zinc-900 rounded-full animate-spin" />
                   ) : (
                     <>
                       <CheckCircle2 className="w-5 h-5" />
@@ -620,17 +627,17 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
                 >
                   <div className={`rounded-2xl p-5 space-y-3 ${
                     feedback.isCorrect 
-                      ? 'bg-emerald-50 border border-emerald-100' 
-                      : 'bg-amber-50 border border-amber-100'
+                      ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800' 
+                      : 'bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800'
                   }`}>
                     <div className="flex items-center gap-2">
                       {feedback.isCorrect ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                       ) : (
-                        <XCircle className="w-4 h-4 text-amber-600" />
+                        <XCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                       )}
                       <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                        feedback.isCorrect ? 'text-emerald-600' : 'text-amber-600'
+                        feedback.isCorrect ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
                       }`}>
                         {feedback.isCorrect 
                           ? (hasError ? 'Correct! (Already attempted)' : 'Perfect! +1 Mastered') 
@@ -639,17 +646,17 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
                     </div>
                     
                     <p className={`text-sm leading-relaxed ${
-                      feedback.isCorrect ? 'text-emerald-800' : 'text-amber-800'
+                      feedback.isCorrect ? 'text-emerald-800 dark:text-emerald-300' : 'text-amber-800 dark:text-amber-300'
                     }`}>
                       {feedback.message}
                     </p>
 
                     {!feedback.isCorrect && feedback.hint && (
-                      <div className="bg-white/60 p-3 rounded-xl">
-                        <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1 opacity-60">
+                      <div className="bg-white/60 dark:bg-zinc-800/60 p-3 rounded-xl">
+                        <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest mb-1 opacity-60">
                           Hint
                         </p>
-                        <p className="text-sm text-amber-900 italic">
+                        <p className="text-sm text-amber-900 dark:text-amber-200 italic">
                           {feedback.hint}
                         </p>
                       </div>
@@ -658,7 +665,7 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
                     {feedback.isCorrect ? (
                       <button
                         onClick={nextSentence}
-                        className="flex items-center gap-2 bg-zinc-900 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-zinc-800 active:scale-[0.98] transition-all w-fit"
+                        className="flex items-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-6 py-2.5 rounded-xl font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 active:scale-[0.98] transition-all w-fit"
                       >
                         Next
                         <ChevronRight className="w-4 h-4" />
@@ -673,7 +680,7 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
                         </button>
                         <button
                           onClick={nextSentence}
-                          className="flex items-center gap-2 text-zinc-500 hover:text-zinc-700 px-4 py-2.5 text-sm font-medium transition-all"
+                          className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-4 py-2.5 text-sm font-medium transition-all"
                         >
                           Skip for now
                         </button>
@@ -694,7 +701,7 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
             <Trophy className="w-3 h-3" />
             <span>Mastered Today: {stats.perfectToday}</span>
           </div>
-          <div className="bg-zinc-200 w-px h-3" />
+          <div className="bg-zinc-200 dark:bg-zinc-700 w-px h-3" />
           <div className="flex items-center gap-1.5">
             <span>Total Mastered: {recallState?.completedSentences.length || 0}</span>
           </div>

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import '@/src/index.css';
+import { DarkModeProvider } from '@/src/DarkModeProvider';
 
 export const metadata: Metadata = {
   title: 'LingoPlayer',
@@ -12,8 +13,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body>
+        <DarkModeProvider>
+          {children}
+        </DarkModeProvider>
+      </body>
     </html>
   );
 }
