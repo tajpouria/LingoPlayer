@@ -35,13 +35,6 @@ type SessionMode = 'learn' | 'review';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DECKS: Deck[] = [
-  {
-    name: 'TaalCompleet - A1',
-    url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRe6opl5ppH_B3r6TIKO0hVNiHkB2By-RuY1kH1sJQG4wHscGtlrxG_UMjWj-RjlxvFjwkBmBFE69Qb/pub?output=tsv',
-  },
-];
-
 // Box index → review interval in days
 // Box 1: every day · Box 2: every 3 days · Box 3: every week
 // Box 4: every 2 weeks · Box 5: once a month
@@ -112,6 +105,34 @@ export default function App() {
   const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => { setHasMounted(true); }, []);
 
+  // Decks (stored on backend S3)
+  const [decks, setDecks] = useState<Deck[]>([]);
+  const [decksLoading, setDecksLoading] = useState(true);
+  const [newDeckName, setNewDeckName] = useState('');
+  const [newDeckUrl, setNewDeckUrl] = useState('');
+
+  useEffect(() => {
+    if (!hasMounted) return;
+    fetch('/api/decks').then(r => r.json()).then(d => { if (Array.isArray(d)) setDecks(d); }).finally(() => setDecksLoading(false));
+  }, [hasMounted]);
+
+  async function addDeck() {
+    const name = newDeckName.trim();
+    const url = newDeckUrl.trim();
+    if (!name || !url) return;
+    const res = await fetch('/api/decks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, url }) });
+    const updated = await res.json();
+    if (Array.isArray(updated)) setDecks(updated);
+    setNewDeckName('');
+    setNewDeckUrl('');
+  }
+
+  async function removeDeck(index: number) {
+    const res = await fetch('/api/decks', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index }) });
+    const updated = await res.json();
+    if (Array.isArray(updated)) setDecks(updated);
+  }
+
   // Deck & data
   const [selectedDeckIndex, setSelectedDeckIndex] = useState<number | null>(null);
   const [data, setData] = useState<Row[]>([]);
@@ -147,7 +168,7 @@ export default function App() {
     setLoading(true);
     setError(null);
 
-    fetch(DECKS[selectedDeckIndex].url)
+    fetch(decks[selectedDeckIndex].url)
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch data');
         return res.text();
@@ -158,14 +179,14 @@ export default function App() {
           return { word: parts[0] || '', sentences: parts.slice(1) };
         }).filter((r: Row) => r.word);
         setData(rows);
-        setSRS(loadSRS(DECKS[selectedDeckIndex].name));
+        setSRS(loadSRS(decks[selectedDeckIndex].name));
         setLoading(false);
       })
       .catch((err: Error) => {
         setError(err.message ?? 'An error occurred');
         setLoading(false);
       });
-  }, [selectedDeckIndex]);
+  }, [selectedDeckIndex, decks]);
 
   // ── TTS ─────────────────────────────────────────────────────────────────────
 
@@ -191,7 +212,7 @@ export default function App() {
       const isNewWord = !srsRef.current[word.word];
       const newSRS = promoteWord(srsRef.current, word.word, isNewWord);
       setSRS(newSRS);
-      saveSRS(DECKS[selectedDeckIndex!].name, newSRS);
+      saveSRS(decks[selectedDeckIndex!].name, newSRS);
     }
 
     const next = idx + 1;
@@ -319,26 +340,68 @@ export default function App() {
       <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 text-zinc-900 p-6">
         <div className="max-w-md w-full">
           <p className="text-zinc-500 text-center mb-8">Choose a deck to start learning</p>
+
+          {decksLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-zinc-400" /></div>
+          ) : (<>
+
+          {/* Add deck form */}
+          <div className="mb-6 p-4 bg-white rounded-2xl border border-zinc-200 space-y-3">
+            <input
+              type="text"
+              placeholder="Deck name"
+              value={newDeckName}
+              onChange={e => setNewDeckName(e.target.value)}
+              className="w-full p-3 bg-zinc-50 rounded-xl text-sm outline-none"
+            />
+            <input
+              type="url"
+              placeholder="Spreadsheet URL (TSV)"
+              value={newDeckUrl}
+              onChange={e => setNewDeckUrl(e.target.value)}
+              className="w-full p-3 bg-zinc-50 rounded-xl text-sm outline-none"
+            />
+            <button
+              onClick={addDeck}
+              disabled={!newDeckName.trim() || !newDeckUrl.trim()}
+              className="w-full py-2.5 bg-zinc-900 text-white rounded-xl text-sm font-medium disabled:opacity-30"
+            >
+              Add deck
+            </button>
+          </div>
+
           <div className="space-y-3">
-            {DECKS.map((deck, index) => {
+            {decks.map((deck, index) => {
               const deckSRS = hasMounted ? loadSRS(deck.name) : {};
               const reviewCount = (Object.values(deckSRS) as WordSRS[]).filter(w => w.box >= 1 && w.nextReviewDate <= todayStr()).length;
               return (
-                <button
-                  key={index}
-                  onClick={() => setSelectedDeckIndex(index)}
-                  className="w-full p-6 bg-white rounded-2xl border-2 border-zinc-200 hover:border-zinc-900 hover:shadow-lg transition-all text-left"
-                >
-                  <h3 className="font-bold text-lg mb-2">{deck.name}</h3>
-                  {reviewCount > 0 && (
-                    <span className="text-xs font-medium px-2 py-1 bg-blue-50 text-blue-600 rounded-full">
-                      {reviewCount} due for review
-                    </span>
-                  )}
-                </button>
+                <div key={index} className="relative group">
+                  <button
+                    onClick={() => setSelectedDeckIndex(index)}
+                    className="w-full p-6 bg-white rounded-2xl border-2 border-zinc-200 hover:border-zinc-900 hover:shadow-lg transition-all text-left"
+                  >
+                    <h3 className="font-bold text-lg mb-1">{deck.name}</h3>
+                    <p className="text-xs text-zinc-400 truncate mb-2">{deck.url}</p>
+                    {reviewCount > 0 && (
+                      <span className="text-xs font-medium px-2 py-1 bg-blue-50 text-blue-600 rounded-full">
+                        {reviewCount} due for review
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => { if (confirm(`Delete "${deck.name}"?`)) removeDeck(index); }}
+                    className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-xs text-zinc-400 hover:text-red-500 transition-all px-2 py-1"
+                  >
+                    ✕
+                  </button>
+                </div>
               );
             })}
+            {decks.length === 0 && (
+              <p className="text-sm text-zinc-400 text-center py-4">No decks yet. Add one above.</p>
+            )}
           </div>
+          </>)}
         </div>
       </div>
     );
@@ -376,7 +439,7 @@ export default function App() {
       <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 p-6">
         <div className="max-w-md w-full">
           <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 text-center mb-1">
-            {DECKS[selectedDeckIndex].name}
+            {decks[selectedDeckIndex].name}
           </p>
           <p className="text-zinc-500 text-center mb-8">What would you like to do?</p>
 
@@ -490,7 +553,7 @@ export default function App() {
       <header className="p-6 flex justify-between items-center">
         <div>
           <h1 className="text-xs font-bold uppercase tracking-widest text-zinc-400">
-            {DECKS[selectedDeckIndex!].name}
+            {decks[selectedDeckIndex!].name}
           </h1>
           <p className="text-sm font-medium text-zinc-600">
             {sessionIndex + 1} / {sessionWords.length} · {sessionMode === 'learn' ? 'Learn' : 'Review'}
