@@ -6,6 +6,28 @@ function req(name: string): string {
   return v;
 }
 
+// Gemini API key rotation
+let geminiKeyIndex = 0;
+let geminiKeys: string[] | null = null;
+
+function getGeminiKeys(): string[] {
+  if (!geminiKeys) {
+    const raw = req('GEMINI_API_KEY');
+    geminiKeys = raw.split(',').map(k => k.trim()).filter(k => k.length > 0);
+    if (geminiKeys.length === 0) {
+      throw new Error('GEMINI_API_KEY must contain at least one key');
+    }
+  }
+  return geminiKeys;
+}
+
+export function getNextGeminiApiKey(): string {
+  const keys = getGeminiKeys();
+  const key = keys[geminiKeyIndex % keys.length];
+  geminiKeyIndex++;
+  return key;
+}
+
 export const env = {
   get jwtSecret() { return req('JWT_SECRET'); },
   get smtpHost() { return req('SMTP_HOST'); },

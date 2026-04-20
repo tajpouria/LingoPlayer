@@ -6,8 +6,9 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Settings2, BookOpen, RotateCcw } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Settings2, BookOpen, RotateCcw, Brain } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import LingoRecall from './LingoRecall';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ interface DeckSRS {
   [word: string]: WordSRS;
 }
 
-type SessionMode = 'learn' | 'review';
+type SessionMode = 'learn' | 'review' | 'recall';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -175,6 +176,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [srs, setSRS] = useState<DeckSRS>({});
+  const [recallRemaining, setRecallRemaining] = useState<number | null>(null);
 
   // Session
   const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
@@ -252,6 +254,35 @@ export default function App() {
         if (Object.keys(localSRS).length > Object.keys(remoteSRS).length) {
           saveRemoteSRS(deckName, merged);
         }
+        
+        // Fetch recall state to calculate remaining
+        fetch(`/api/recall?deck=${encodeURIComponent(deckName)}`)
+          .then(r => r.json())
+          .then(recallState => {
+            const today = new Date().toISOString().split('T')[0];
+            if (recallState.dailySession && recallState.dailySession.date === today) {
+              const remaining = recallState.dailySession.queue.length - recallState.dailySession.currentIndex;
+              setRecallRemaining(Math.max(0, remaining));
+            } else {
+              // New day, calculate potential sentences from learned words
+              const completedSet = new Set(recallState.completedSentences || []);
+              let availableSentences = 0;
+              for (const row of rows) {
+                const wordSRS = merged[row.word];
+                if (wordSRS && wordSRS.box >= 1) {
+                  for (let i = 0; i < row.sentences.length; i++) {
+                    const id = `${row.word}::${i}`;
+                    if (!completedSet.has(id)) {
+                      availableSentences++;
+                    }
+                  }
+                }
+              }
+              setRecallRemaining(Math.min(25, availableSentences));
+            }
+          })
+          .catch(() => setRecallRemaining(null));
+        
         setLoading(false);
       })
       .catch((err: Error) => {
@@ -387,6 +418,25 @@ export default function App() {
     setIsPlaying(true);
   }
 
+  function refreshRecallRemaining() {
+    if (selectedDeckIndex === null) return;
+    const deckName = decks[selectedDeckIndex].name;
+    
+    fetch(`/api/recall?deck=${encodeURIComponent(deckName)}`)
+      .then(r => r.json())
+      .then(recallState => {
+        const today = new Date().toISOString().split('T')[0];
+        if (recallState.dailySession && recallState.dailySession.date === today) {
+          const remaining = recallState.dailySession.queue.length - recallState.dailySession.currentIndex;
+          setRecallRemaining(Math.max(0, remaining));
+        } else {
+          // New day - show max 25
+          setRecallRemaining(25);
+        }
+      })
+      .catch(() => {});
+  }
+
   function endSession() {
     clearAudio();
     flushSRS();
@@ -397,6 +447,8 @@ export default function App() {
     setIsSessionComplete(false);
     setItemIndex(-1);
     setShowSettings(false);
+    // Refresh recall count after returning from recall session
+    refreshRecallRemaining();
   }
 
   function changeDeck() {
@@ -405,6 +457,7 @@ export default function App() {
     setSelectedDeckIndex(null);
     setData([]);
     setSRS({});
+    setRecallRemaining(null);
   }
 
   // ── Screens ──────────────────────────────────────────────────────────────────
@@ -560,6 +613,36 @@ export default function App() {
                 <span className="text-3xl font-bold text-blue-500">{dueWords.length}</span>
               </div>
             </button>
+
+            {(() => {
+              const wordsInBoxes = (Object.values(srs) as WordSRS[]).filter(w => w.box >= 1).length;
+              const remaining = recallRemaining ?? 0;
+              const isDisabled = wordsInBoxes === 0 || remaining === 0;
+              return (
+                <button
+                  onClick={() => setSessionMode('recall')}
+                  disabled={isDisabled}
+                  className="w-full p-6 bg-white rounded-2xl border-2 border-zinc-200 hover:border-purple-400 hover:shadow-lg transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Brain className="w-5 h-5 text-purple-500" />
+                        <h3 className="font-bold text-lg">Lingo Recall</h3>
+                      </div>
+                      <p className="text-sm text-zinc-500">
+                        {wordsInBoxes === 0
+                          ? 'Learn some words first'
+                          : remaining === 0
+                            ? 'All done for today!'
+                            : `${remaining} sentence${remaining !== 1 ? 's' : ''} remaining`}
+                      </p>
+                    </div>
+                    <span className="text-3xl font-bold text-purple-500">{remaining}</span>
+                  </div>
+                </button>
+              );
+            })()}
           </div>
 
           {/* Box progress */}
@@ -591,6 +674,18 @@ export default function App() {
           </button>
         </div>
       </div>
+    );
+  }
+
+  // Lingo Recall session
+  if (sessionMode === 'recall') {
+    return (
+      <LingoRecall
+        deckName={decks[selectedDeckIndex].name}
+        data={data}
+        srs={srs}
+        onBack={endSession}
+      />
     );
   }
 
