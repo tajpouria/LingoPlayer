@@ -96,10 +96,16 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
       }
     }
     
+    // Count sentences mastered today to respect the daily limit
+    const todayMastered = (recallState?.sessionHistory || [])
+      .filter(s => s.date === todayStr())
+      .reduce((acc, s) => acc + s.masteredSentences.length, 0);
+    const remaining = Math.max(0, DAILY_RECALL_LIMIT - todayMastered);
+
     // Shuffle and limit
     const shuffled = [...sentences].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, DAILY_RECALL_LIMIT);
-  }, [data, srs, recallState?.completedSentences]);
+    return shuffled.slice(0, remaining);
+  }, [data, srs, recallState?.completedSentences, recallState?.sessionHistory]);
 
   // ── Generate prompt text ──────────────────────────────────────────────────
 
@@ -140,15 +146,17 @@ Wait for my answer before moving on.
 
 Do not give me the Dutch answer unless I fail three times or ask for the solution.
 
+After each sentence (whether correct or not), show a progress line: e.g. "Progress: 3 / 25 done, 22 left."
+
 IMPORTANT: Always communicate with me in English. All instructions, feedback, hints, and explanations must be in English.
 
 Practice all ${dailySentences.length} sentences. Start immediately with the first one.
 
 At the END of the session, output a JSON summary:
 \`\`\`json
-{"date":"YYYY-MM-DD","correctFirstTry":0,"failed":0,"masteredSentences":[],"struggledSentences":[]}
+{"masteredSentences":[]}
 \`\`\`
-Use the sentence IDs in brackets below for masteredSentences (correct on first try) and struggledSentences (needed hints/retries).
+Use the sentence IDs in brackets below for masteredSentences (sentences I got correct on the first try).
 
 Here is my data:
 
@@ -242,13 +250,8 @@ ${sentencesList}`;
       const result: SessionResult = JSON.parse(jsonStr);
       
       // Validate required fields
-      if (typeof result.sentencesAsked !== 'number' ||
-          typeof result.correctFirstTry !== 'number' ||
-          typeof result.correctWithRetry !== 'number' ||
-          typeof result.failed !== 'number' ||
-          !Array.isArray(result.masteredSentences) ||
-          !Array.isArray(result.struggledSentences)) {
-        throw new Error('Invalid JSON format. Please ensure all required fields are present.');
+      if (!Array.isArray(result.masteredSentences)) {
+        throw new Error('Invalid JSON format. Please ensure masteredSentences is present.');
       }
       
       // Add date if missing

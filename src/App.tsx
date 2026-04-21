@@ -181,6 +181,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [srs, setSRS] = useState<DeckSRS>({});
   const [recallRemaining, setRecallRemaining] = useState<number | null>(null);
+  const [recallTotal, setRecallTotal] = useState<number | null>(null);
 
   // Session
   const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
@@ -267,26 +268,23 @@ export default function App() {
           .then(r => r.json())
           .then(recallState => {
             const today = new Date().toISOString().split('T')[0];
-            if (recallState.dailySession && recallState.dailySession.date === today) {
-              const remaining = recallState.dailySession.queue.length - recallState.dailySession.currentIndex;
-              setRecallRemaining(Math.max(0, remaining));
-            } else {
-              // New day, calculate potential sentences from learned words
-              const completedSet = new Set(recallState.completedSentences || []);
-              let availableSentences = 0;
-              for (const row of rows) {
-                const wordSRS = merged[row.word];
-                if (wordSRS && wordSRS.box >= 1) {
-                  for (let i = 0; i < row.sentences.length; i++) {
-                    const id = `${row.word}::${i}`;
-                    if (!completedSet.has(id)) {
-                      availableSentences++;
-                    }
-                  }
+            const todayMastered = (recallState.sessionHistory || [])
+              .filter((s: { date: string }) => s.date === today)
+              .reduce((acc: number, s: { masteredSentences: string[] }) => acc + (s.masteredSentences || []).length, 0);
+            const dailyLimit = Math.max(0, 25 - todayMastered);
+            const completedSet = new Set(recallState.completedSentences || []);
+            let availableSentences = 0;
+            for (const row of rows) {
+              const wordSRS = merged[row.word];
+              if (wordSRS && wordSRS.box >= 1) {
+                for (let i = 0; i < row.sentences.length; i++) {
+                  const id = `${row.word}::${i}`;
+                  if (!completedSet.has(id)) availableSentences++;
                 }
               }
-              setRecallRemaining(Math.min(25, availableSentences));
             }
+            setRecallTotal(availableSentences);
+            setRecallRemaining(Math.min(dailyLimit, availableSentences));
           })
           .catch(() => setRecallRemaining(null));
         
@@ -465,13 +463,23 @@ export default function App() {
       .then(r => r.json())
       .then(recallState => {
         const today = new Date().toISOString().split('T')[0];
-        if (recallState.dailySession && recallState.dailySession.date === today) {
-          const remaining = recallState.dailySession.queue.length - recallState.dailySession.currentIndex;
-          setRecallRemaining(Math.max(0, remaining));
-        } else {
-          // New day - show max 25
-          setRecallRemaining(25);
+        const todayMastered = (recallState.sessionHistory || [])
+          .filter((s: { date: string }) => s.date === today)
+          .reduce((acc: number, s: { masteredSentences: string[] }) => acc + (s.masteredSentences || []).length, 0);
+        const dailyLimit = Math.max(0, 25 - todayMastered);
+        const completedSet = new Set(recallState.completedSentences || []);
+        let availableSentences = 0;
+        for (const row of data) {
+          const wordSRS = srs[row.word];
+          if (wordSRS && wordSRS.box >= 1) {
+            for (let i = 0; i < row.sentences.length; i++) {
+              const id = `${row.word}::${i}`;
+              if (!completedSet.has(id)) availableSentences++;
+            }
+          }
         }
+        setRecallTotal(availableSentences);
+        setRecallRemaining(Math.min(dailyLimit, availableSentences));
       })
       .catch(() => {});
   }
@@ -599,13 +607,18 @@ export default function App() {
       <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col items-center justify-center p-8">
         <div className="w-full max-w-sm">
           <p className="font-serif text-3xl font-normal text-center mb-2">{decks[selectedDeckIndex].name}</p>
-          <p className="text-[var(--text-muted)] text-center text-base mb-10">{data.length} words</p>
+          <p className="text-[var(--text-muted)] text-center text-base mb-2">{data.length} words</p>
+          <div className="flex justify-center gap-6 text-sm text-[var(--text-muted)] mb-10">
+            <span><span className="text-[var(--text-primary)] font-medium">{data.filter(row => !srs[row.word]).length}</span> to learn</span>
+            <span><span className="text-[var(--text-primary)] font-medium">{dueWords.length}</span> to review</span>
+            <span><span className="text-[var(--text-primary)] font-medium">{recallTotal ?? 0}</span> to recall</span>
+          </div>
 
           <div className="space-y-px">
             {[
               { mode: 'learn' as SessionMode, label: 'Learn', count: newWords.length, note: 'new' },
               { mode: 'review' as SessionMode, label: 'Review', count: dueWords.length, note: 'due' },
-              { mode: 'recall' as SessionMode, label: 'Recall', count: recallRemaining ?? 0, note: 'sentences', disabled: (Object.values(srs) as WordSRS[]).filter(w => w.box >= 1).length === 0 || (recallRemaining ?? 0) === 0 },
+              { mode: 'recall' as SessionMode, label: 'Recall', count: recallRemaining ?? 0, note: 'due', disabled: (Object.values(srs) as WordSRS[]).filter(w => w.box >= 1).length === 0 || (recallRemaining ?? 0) === 0 },
             ].map(({ mode, label, count, note, disabled }) => (
               <button
                 key={mode}
