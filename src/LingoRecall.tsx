@@ -2,18 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Copy, 
-  Check,
-  ArrowLeft,
-  Moon,
-  Sun,
-  Loader2,
-  ClipboardPaste,
-  Save,
-  Brain,
-  AlertCircle
-} from 'lucide-react';
+import { Copy, Check, Loader2, AlertCircle } from 'lucide-react';
 import { useDarkMode } from './DarkModeProvider';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -73,7 +62,7 @@ function sentenceId(word: string, sentenceIndex: number): string {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecallProps) {
-  const { isDark, toggle: toggleDarkMode } = useDarkMode();
+  const { isDark: _isDark } = useDarkMode();
   const [recallState, setRecallState] = useState<RecallState | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -326,222 +315,118 @@ ${sentencesList}`;
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950">
-        <Loader2 className="w-12 h-12 animate-spin text-zinc-400 mb-4" />
-        <p className="text-zinc-500 dark:text-zinc-400">Loading Lingo Recall...</p>
+      <div className="flex items-center justify-center min-h-screen bg-[var(--bg-primary)]">
+        <Loader2 className="w-5 h-5 animate-spin text-[var(--text-muted)]" />
       </div>
     );
   }
-
-  // ── No sentences available ────────────────────────────────────────────────
 
   if (dailySentences.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-6">
-        <div className="max-w-md w-full text-center">
-          <div className="text-6xl mb-6">✨</div>
-          <h2 className="text-2xl font-bold mb-2">All Done!</h2>
-          <p className="text-zinc-500 dark:text-zinc-400 mb-4">
-            You've mastered all available sentences. Great job!
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] p-8">
+        <div className="max-w-sm w-full text-center">
+          <p className="font-serif text-3xl font-normal mb-2">All done</p>
+          <p className="text-[var(--text-muted)] text-sm mb-2">
+            {stats.completedCount} / {stats.totalSentences} sentences mastered
           </p>
-          <p className="text-zinc-400 dark:text-zinc-500 text-sm mb-8">
-            Total mastered: {stats.completedCount} / {stats.totalSentences}
-          </p>
-          <button 
-            onClick={onBack} 
-            className="w-full py-4 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl font-medium"
-          >
-            Back to menu
-          </button>
+          <button onClick={onBack} className="mt-8 text-sm underline text-[var(--text-primary)]">Back to menu</button>
         </div>
       </div>
     );
   }
 
-  // ── Main view ─────────────────────────────────────────────────────────────
-
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans">
+    <div className="flex flex-col min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
       {/* Header */}
-      <header className="p-6 flex justify-between items-center">
-        <div>
-          <button 
-            onClick={onBack}
-            className="flex items-center gap-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 mb-1 text-sm"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </button>
-          <h1 className="text-xs font-bold uppercase tracking-widest text-zinc-400">
-            {deckName}
-          </h1>
-          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-            Lingo Recall
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={toggleDarkMode} className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors">
-            {isDark ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-zinc-500" />}
-          </button>
-          <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-semibold flex items-center gap-1">
-            <Brain className="w-3 h-3" />
-            Recall
-          </span>
-        </div>
+      <header className="px-8 py-4 flex justify-between items-center text-base text-[var(--text-muted)]">
+        <button onClick={onBack} className="hover:text-[var(--text-primary)] transition-colors">← Back</button>
+        <span>{stats.completedCount} / {stats.totalSentences} mastered</span>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col items-center px-6 py-8 overflow-auto">
-        <div className="max-w-2xl w-full space-y-6">
-          {/* Stats card */}
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-100 dark:border-zinc-800 shadow-sm">
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{stats.remainingToday}</p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Today's Sentences</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.completedCount}</p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Mastered</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{stats.sessionCount}</p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Sessions</p>
-              </div>
-            </div>
-          </div>
+      <main className="flex-1 flex flex-col items-center px-8 py-6 overflow-auto">
+        <div className="max-w-2xl w-full space-y-8">
 
-          {/* Instructions */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-5 border border-blue-100 dark:border-blue-800">
-            <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">How to use</h3>
-            <ol className="text-sm text-blue-800 dark:text-blue-300 space-y-1.5 list-decimal list-inside">
-              <li>Copy the prompt below</li>
-              <li>Paste it into ChatGPT, Claude, or your preferred AI</li>
-              <li>Practice your Dutch translations in the conversation</li>
-              <li>When done, copy the JSON summary the AI provides</li>
-              <li>Paste it here to save your progress</li>
-            </ol>
+          {/* Stats row */}
+          <div className="flex gap-8 text-base border-b border-[var(--border-color)] pb-4">
+            <div><span className="font-medium">{stats.remainingToday}</span> <span className="text-[var(--text-muted)]">today</span></div>
+            <div><span className="font-medium">{stats.completedCount}</span> <span className="text-[var(--text-muted)]">mastered</span></div>
+            <div><span className="font-medium">{stats.sessionCount}</span> <span className="text-[var(--text-muted)]">sessions</span></div>
           </div>
 
           {/* Prompt section */}
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-                Tutor Prompt
-              </p>
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest">Tutor prompt</p>
               <button
                 onClick={copyPrompt}
-                className="flex items-center gap-2 px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg font-medium text-sm hover:bg-zinc-800 dark:hover:bg-zinc-200 active:scale-[0.98] transition-all"
+                className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
               >
-                {copied ? (
-                  <>
-                    <Check className="w-4 h-4" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    Copy Prompt
-                  </>
-                )}
+                {copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
               </button>
             </div>
-            <div className="p-4 max-h-96 overflow-auto">
-              <pre className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">
-                {promptText}
-              </pre>
-            </div>
+              <pre className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap font-mono leading-relaxed max-h-64 overflow-auto border-l-2 border-[var(--border-color)] pl-4">
+              {promptText}
+            </pre>
           </div>
 
-          {/* Results input section */}
-          <AnimatePresence>
+          {/* Results input */}
+          <div className="border-t border-[var(--border-color)] pt-6">
             {!showResultsInput ? (
-              <motion.button
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+              <button
                 onClick={() => setShowResultsInput(true)}
-                className="w-full py-4 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-2xl text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-all flex items-center justify-center gap-2 font-medium"
+                className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
               >
-                <ClipboardPaste className="w-5 h-5" />
-                Paste Session Results
-              </motion.button>
+                + Paste session results
+              </button>
             ) : (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden"
-              >
-                <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-                    Paste Session Results JSON
-                  </p>
-                  <button
-                    onClick={() => {
-                      setShowResultsInput(false);
-                      setResultsJson('');
-                      setParseError(null);
-                    }}
-                    className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-sm"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                <div className="p-4 space-y-4">
+              <AnimatePresence>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="space-y-4"
+                >
+                  <div className="flex justify-between items-center">
+                    <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest">Session results JSON</p>
+                    <button
+                      onClick={() => { setShowResultsInput(false); setResultsJson(''); setParseError(null); }}
+                      className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                   <textarea
                     value={resultsJson}
-                    onChange={(e) => {
-                      setResultsJson(e.target.value);
-                      setParseError(null);
-                    }}
-                    placeholder='Paste the JSON here (including ```json blocks is fine)...'
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-200 dark:border-zinc-700 focus:border-zinc-400 dark:focus:border-zinc-500 rounded-xl p-4 text-sm font-mono outline-none transition-colors min-h-[150px] resize-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
+                    onChange={(e) => { setResultsJson(e.target.value); setParseError(null); }}
+                    placeholder="Paste JSON here..."
+                    className="w-full bg-transparent border border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none p-3 text-base font-mono min-h-[120px] resize-none transition-colors placeholder:text-[var(--text-muted)]"
                   />
-                  
                   {parseError && (
-                    <div className="flex items-start gap-2 text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">
+                    <div className="flex items-start gap-2 text-sm text-[var(--text-muted)]">
                       <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                       <span>{parseError}</span>
                     </div>
                   )}
-                  
                   {saveSuccess && (
-                    <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-50 dark:bg-emerald-900/20 p-3 rounded-xl">
-                      <Check className="w-4 h-4" />
-                      <span>Results saved successfully!</span>
-                    </div>
+                    <p className="text-sm text-[var(--text-muted)]">
+                      <Check className="w-4 h-4 inline mr-1" />Saved
+                    </p>
                   )}
-                  
                   <button
                     onClick={parseAndSaveResults}
                     disabled={!resultsJson.trim() || saving}
-                    className="w-full py-3 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all disabled:bg-zinc-300 dark:disabled:bg-zinc-700 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="text-base underline text-[var(--text-primary)] disabled:opacity-30 flex items-center gap-1"
                   >
-                    {saving ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <>
-                        <Save className="w-5 h-5" />
-                        Save Results
-                      </>
-                    )}
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Save results
                   </button>
-                </div>
-              </motion.div>
+                </motion.div>
+              </AnimatePresence>
             )}
-          </AnimatePresence>
+          </div>
+
         </div>
       </main>
-
-      {/* Footer */}
-      <footer className="p-6 text-center">
-        <div className="flex items-center justify-center gap-6 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-          <div className="flex items-center gap-1.5">
-            <span>Progress: {stats.completedCount} / {stats.totalSentences}</span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

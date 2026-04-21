@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Settings2, BookOpen, RotateCcw, Brain, Moon, Sun, Languages } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Brain } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LingoRecall from './LingoRecall';
 import { useDarkMode } from './DarkModeProvider';
@@ -195,7 +195,6 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [delay, setDelay] = useState(3);
   const [lang, setLang] = useState('nl');
-  const [showSettings, setShowSettings] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -486,7 +485,6 @@ export default function App() {
     setSessionIndex(0);
     setIsSessionComplete(false);
     setItemIndex(-1);
-    setShowSettings(false);
     // Refresh recall count after returning from recall session
     refreshRecallRemaining();
   }
@@ -505,80 +503,69 @@ export default function App() {
   // Deck selection
   if (selectedDeckIndex === null) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-6">
-        {/* Dark mode toggle */}
-        <button
-          onClick={toggleDarkMode}
-          className="fixed top-4 right-4 p-3 rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors shadow-sm"
-          aria-label="Toggle dark mode"
-        >
-          {isDark ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-zinc-600" />}
-        </button>
-
-        <div className="max-w-md w-full">
-          <p className="text-zinc-500 dark:text-zinc-400 text-center mb-8">Choose a deck to start learning</p>
+      <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col items-center justify-center p-8">
+        <div className="w-full max-w-sm">
+          <p className="font-serif text-4xl font-normal text-center mb-2">LingoPlayer</p>
+          <p className="text-[var(--text-muted)] text-center text-base mb-10">Select a deck</p>
 
           {decksLoading ? (
-            <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-zinc-400" /></div>
-          ) : (<>
+            <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-[var(--text-muted)]" /></div>
+          ) : (
+            <>
+              <div className="space-y-2 mb-8">
+                {decks.map((deck, index) => {
+                  const deckSRS = hasMounted ? loadSRS(deck.name) : {};
+                  const reviewCount = (Object.values(deckSRS) as WordSRS[]).filter(w => w.box >= 1 && w.nextReviewDate <= todayStr()).length;
+                  return (
+                    <div key={index} className="relative group flex items-center">
+                      <button
+                        onClick={() => setSelectedDeckIndex(index)}
+                        className="flex-1 text-left py-3 border-b border-[var(--border-color)] hover:border-[var(--text-primary)] transition-colors"
+                      >
+                        <span className="font-medium text-lg">{deck.name}</span>
+                        {reviewCount > 0 && (
+                          <span className="ml-2 text-sm text-[var(--text-muted)]">({reviewCount} due)</span>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => { if (confirm(`Delete "${deck.name}"?`)) removeDeck(index); }}
+                        className="opacity-0 group-hover:opacity-100 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all px-2"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+                {decks.length === 0 && (
+                  <p className="text-sm text-[var(--text-muted)] text-center py-4">No decks yet.</p>
+                )}
+              </div>
 
-          {/* Add deck form */}
-          <div className="mb-6 p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-3">
-            <input
-              type="text"
-              placeholder="Deck name"
-              value={newDeckName}
-              onChange={e => setNewDeckName(e.target.value)}
-              className="w-full p-3 bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-100 rounded-xl text-sm outline-none"
-            />
-            <input
-              type="url"
-              placeholder="Spreadsheet URL (TSV)"
-              value={newDeckUrl}
-              onChange={e => setNewDeckUrl(e.target.value)}
-              className="w-full p-3 bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-100 rounded-xl text-sm outline-none"
-            />
-            <button
-              onClick={addDeck}
-              disabled={!newDeckName.trim() || !newDeckUrl.trim()}
-              className="w-full py-2.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-sm font-medium disabled:opacity-30"
-            >
-              Add deck
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {decks.map((deck, index) => {
-              const deckSRS = hasMounted ? loadSRS(deck.name) : {};
-              const reviewCount = (Object.values(deckSRS) as WordSRS[]).filter(w => w.box >= 1 && w.nextReviewDate <= todayStr()).length;
-              return (
-                <div key={index} className="relative group">
-                  <button
-                    onClick={() => setSelectedDeckIndex(index)}
-                    className="w-full p-6 bg-white dark:bg-zinc-900 rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 hover:border-zinc-900 dark:hover:border-zinc-600 hover:shadow-lg transition-all text-left"
-                  >
-                    <h3 className="font-bold text-lg mb-1">{deck.name}</h3>
-                    <p className="text-xs text-zinc-400 truncate mb-2">{deck.url}</p>
-                    {reviewCount > 0 && (
-                      <span className="text-xs font-medium px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full">
-                        {reviewCount} due for review
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => { if (confirm(`Delete "${deck.name}"?`)) removeDeck(index); }}
-                    className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-xs text-zinc-400 hover:text-red-500 transition-all px-2 py-1"
-                  >
-                    ✕
-                  </button>
-                </div>
-              );
-            })}
-            {decks.length === 0 && (
-              <p className="text-sm text-zinc-400 text-center py-4">No decks yet. Add one above.</p>
-            )}
-          </div>
-          </>)}
+              <div className="space-y-2 border-t border-[var(--border-color)] pt-6">
+                <input
+                  type="text"
+                  placeholder="Deck name"
+                  value={newDeckName}
+                  onChange={e => setNewDeckName(e.target.value)}
+                  className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)]"
+                />
+                <input
+                  type="url"
+                  placeholder="TSV URL"
+                  value={newDeckUrl}
+                  onChange={e => setNewDeckUrl(e.target.value)}
+                  className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)]"
+                />
+                <button
+                  onClick={addDeck}
+                  disabled={!newDeckName.trim() || !newDeckUrl.trim()}
+                  className="w-full mt-2 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-30 transition-colors text-center"
+                >
+                  + Add deck
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -586,22 +573,18 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950">
-        <Loader2 className="w-12 h-12 animate-spin text-zinc-400 mb-4" />
-        <p className="text-zinc-500 dark:text-zinc-400">Loading vocabulary...</p>
+      <div className="flex items-center justify-center min-h-screen bg-[var(--bg-primary)]">
+        <Loader2 className="w-5 h-5 animate-spin text-[var(--text-muted)]" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6 text-center">
-        <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-2xl mb-4 max-w-xs">
-          <p className="font-bold mb-1">Error</p>
-          <p className="text-sm">{error}</p>
-        </div>
-        <button onClick={() => window.location.reload()} className="px-6 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-full font-medium">
-          Try Again
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[var(--bg-primary)] p-8 text-center">
+        <p className="text-sm text-[var(--text-muted)] mb-4">{error}</p>
+        <button onClick={() => window.location.reload()} className="text-sm underline text-[var(--text-primary)]">
+          Retry
         </button>
       </div>
     );
@@ -613,122 +596,46 @@ export default function App() {
     const dueWords = getDueWords(data, srs);
 
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-6">
-        {/* Dark mode toggle */}
-        <button
-          onClick={toggleDarkMode}
-          className="fixed top-4 right-4 p-3 rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors shadow-sm"
-          aria-label="Toggle dark mode"
-        >
-          {isDark ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-zinc-600" />}
-        </button>
+      <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col items-center justify-center p-8">
+        <div className="w-full max-w-sm">
+          <p className="font-serif text-3xl font-normal text-center mb-2">{decks[selectedDeckIndex].name}</p>
+          <p className="text-[var(--text-muted)] text-center text-base mb-10">{data.length} words</p>
 
-        <div className="max-w-md w-full">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 text-center mb-1">
-            {decks[selectedDeckIndex].name}
-          </p>
-          <p className="text-zinc-500 dark:text-zinc-400 text-center mb-8">What would you like to do?</p>
+          <div className="space-y-px">
+            {[
+              { mode: 'learn' as SessionMode, label: 'Learn', count: newWords.length, note: 'new' },
+              { mode: 'review' as SessionMode, label: 'Review', count: dueWords.length, note: 'due' },
+              { mode: 'recall' as SessionMode, label: 'Recall', count: recallRemaining ?? 0, note: 'sentences', disabled: (Object.values(srs) as WordSRS[]).filter(w => w.box >= 1).length === 0 || (recallRemaining ?? 0) === 0 },
+            ].map(({ mode, label, count, note, disabled }) => (
+              <button
+                key={mode}
+                onClick={() => mode === 'recall' ? setSessionMode('recall') : startSession(mode)}
+                disabled={disabled ?? count === 0}
+                className="w-full flex items-center justify-between py-3 border-b border-[var(--border-color)] hover:border-[var(--text-primary)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-left"
+              >
+                <span className="font-medium text-lg">{label}</span>
+                <span className="text-base text-[var(--text-muted)]">{count} {note}</span>
+              </button>
+            ))}
+          </div>
 
-          <div className="space-y-3">
-            <button
-              onClick={() => startSession('learn')}
-              disabled={newWords.length === 0}
-              className="w-full p-6 bg-white dark:bg-zinc-900 rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 hover:border-emerald-400 dark:hover:border-emerald-600 hover:shadow-lg transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <BookOpen className="w-5 h-5 text-emerald-500" />
-                    <h3 className="font-bold text-lg">Learn</h3>
-                  </div>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    {newWords.length > 0
-                      ? `${newWords.length} new word${newWords.length !== 1 ? 's' : ''} today`
-                      : "All new words learned for today"}
-                  </p>
-                </div>
-                <span className="text-3xl font-bold text-emerald-500">{newWords.length}</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => startSession('review')}
-              disabled={dueWords.length === 0}
-              className="w-full p-6 bg-white dark:bg-zinc-900 rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-lg transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <RotateCcw className="w-5 h-5 text-blue-500" />
-                    <h3 className="font-bold text-lg">Review</h3>
-                  </div>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    {dueWords.length > 0
-                      ? `${dueWords.length} word${dueWords.length !== 1 ? 's' : ''} due`
-                      : 'No reviews due right now'}
-                  </p>
-                </div>
-                <span className="text-3xl font-bold text-blue-500">{dueWords.length}</span>
-              </div>
-            </button>
-
-            {(() => {
-              const wordsInBoxes = (Object.values(srs) as WordSRS[]).filter(w => w.box >= 1).length;
-              const remaining = recallRemaining ?? 0;
-              const isDisabled = wordsInBoxes === 0 || remaining === 0;
+          <div className="mt-10 space-y-1">
+            {([1, 2, 3, 4, 5] as const).map(box => {
+              const count = (Object.values(srs) as WordSRS[]).filter(w => w.box === box).length;
               return (
-                <button
-                  onClick={() => setSessionMode('recall')}
-                  disabled={isDisabled}
-                  className="w-full p-6 bg-white dark:bg-zinc-900 rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 hover:border-purple-400 dark:hover:border-purple-600 hover:shadow-lg transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <Brain className="w-5 h-5 text-purple-500" />
-                        <h3 className="font-bold text-lg">Lingo Recall</h3>
-                      </div>
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                        {wordsInBoxes === 0
-                          ? 'Learn some words first'
-                          : remaining === 0
-                            ? 'All done for today!'
-                            : `${remaining} sentence${remaining !== 1 ? 's' : ''} remaining`}
-                      </p>
-                    </div>
-                    <span className="text-3xl font-bold text-purple-500">{remaining}</span>
+                <div key={box} className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+                  <span className="w-10">Box {box}</span>
+                  <div className="flex-1 h-px bg-[var(--border-color)]">
+                    <div className="h-px bg-[var(--text-primary)]" style={{ width: count > 0 && data.length > 0 ? `${Math.min(100, (count / data.length) * 100)}%` : '0%' }} />
                   </div>
-                </button>
+                  <span className="w-6 text-right">{count}</span>
+                </div>
               );
-            })()}
+            })}
           </div>
 
-          {/* Box progress */}
-          <div className="mt-8 p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-3">Your progress</p>
-            <div className="space-y-1.5">
-              {([1, 2, 3, 4, 5] as const).map(box => {
-                const count = (Object.values(srs) as WordSRS[]).filter(w => w.box === box).length;
-                const labels = ['', 'Every day', 'Every 3 days', 'Every week', 'Every 2 weeks', 'Once a month'];
-                return (
-                  <div key={box} className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-zinc-400 w-12">Box {box}</span>
-                    <div className="flex-1 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-zinc-700 rounded-full"
-                        style={{ width: count > 0 && data.length > 0 ? `${Math.min(100, (count / data.length) * 100)}%` : '0%' }}
-                      />
-                    </div>
-                    <span className="text-xs text-zinc-400 w-8 text-right">{count}</span>
-                    <span className="text-[10px] text-zinc-300 dark:text-zinc-600 hidden sm:block w-28">{labels[box]}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <button onClick={changeDeck} className="mt-4 w-full text-center text-sm text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 py-2">
-            ← Change deck
+          <button onClick={changeDeck} className="mt-8 w-full text-center text-base text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+            ← Decks
           </button>
         </div>
       </div>
@@ -750,14 +657,13 @@ export default function App() {
   // Session complete
   if (isSessionComplete) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-6">
-        <div className="max-w-md w-full text-center">
-          <div className="text-6xl mb-6">🎉</div>
-          <h2 className="text-2xl font-bold mb-2">Session complete!</h2>
-          <p className="text-zinc-500 dark:text-zinc-400 mb-8">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] p-8">
+        <div className="max-w-sm w-full text-center">
+          <p className="font-serif text-3xl font-normal mb-2">Done</p>
+          <p className="text-[var(--text-muted)] text-sm mb-10">
             {promotedRef.current.size} word{promotedRef.current.size !== 1 ? 's' : ''} {sessionMode === 'learn' ? 'learned' : 'reviewed'}
           </p>
-          <button onClick={endSession} className="w-full py-4 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl font-medium">
+          <button onClick={endSession} className="text-sm underline text-[var(--text-primary)]">
             Back to menu
           </button>
         </div>
@@ -774,168 +680,120 @@ export default function App() {
   const boxLabel = wordSRSData ? `Box ${wordSRSData.box}` : 'New';
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans">
+    <div className="flex flex-col min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
       <audio ref={audioRef} className="hidden" />
 
-      {/* Header */}
-      <header className="p-6 flex justify-between items-center">
-        <div>
-          <h1 className="text-xs font-bold uppercase tracking-widest text-zinc-400">
-            {decks[selectedDeckIndex!].name}
-          </h1>
-          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-            {sessionIndex + 1} / {sessionWords.length} · {sessionMode === 'learn' ? 'Learn' : 'Review'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-semibold">
-            {boxLabel}
-          </span>
-          <button onClick={toggleDarkMode} className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors">
-            {isDark ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-zinc-500" />}
-          </button>
-          <button onClick={() => setShowSettings(s => !s)} className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors">
-            <Settings2 className="w-5 h-5 text-zinc-500" />
-          </button>
-        </div>
-      </header>
-
       {/* Progress bar */}
-      <div className="h-1 bg-zinc-100 dark:bg-zinc-800 mx-6 rounded-full overflow-hidden">
+      <div className="h-px bg-[var(--border-color)]">
         <motion.div
-          className="h-full bg-zinc-900 dark:bg-zinc-100 rounded-full"
+          className="h-px bg-[var(--text-primary)]"
           animate={{ width: `${progress}%` }}
           transition={{ duration: 0.4 }}
         />
       </div>
+
+      {/* Header */}
+      <header className="px-8 py-4 flex justify-between items-center text-sm text-[var(--text-muted)]">
+        <span className="text-base">{sessionIndex + 1} / {sessionWords.length}</span>
+        <div className="flex items-center gap-4">
+          <span className="text-base">{boxLabel}</span>
+          <button onClick={endSession} className="text-base hover:text-[var(--text-primary)] transition-colors">End</button>
+        </div>
+      </header>
 
       {/* Main content */}
       <main className="flex-1 flex flex-col items-center justify-center px-8 text-center">
         <AnimatePresence mode="wait">
           <motion.div
             key={`${sessionIndex}-${itemIndex}`}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.25 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
             className="max-w-md w-full"
           >
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400 mb-4">
-              {itemIndex === -1 ? 'Word' : `Sentence ${itemIndex + 1}`}
+            <p className="text-sm text-[var(--text-muted)] mb-6 tracking-widest uppercase">
+              {itemIndex === -1 ? 'word' : `sentence ${itemIndex + 1}`}
             </p>
-            <h2 className={`font-serif leading-tight mb-8 ${itemIndex === -1 ? 'text-5xl font-medium' : 'text-3xl italic text-zinc-700 dark:text-zinc-300'}`}>
+            <h2 className={`font-serif leading-snug ${itemIndex === -1 ? 'text-6xl font-normal' : 'text-3xl italic text-[var(--text-secondary)]'}`}>
               {currentText}
             </h2>
             {itemIndex !== -1 && (
-              <p className="text-sm text-zinc-400 font-mono">{currentWord.word}</p>
+              <p className="mt-4 text-base text-[var(--text-muted)] font-mono">{currentWord.word}</p>
+            )}
+            {translation && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="mt-6 text-base text-[var(--text-secondary)] italic"
+              >
+                {translation}
+              </motion.p>
             )}
           </motion.div>
         </AnimatePresence>
       </main>
 
-      {/* Settings panel */}
-      <AnimatePresence>
-        {showSettings && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="fixed inset-x-0 bottom-32 mx-6 p-6 bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-100 dark:border-zinc-800 z-50"
-          >
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-sm uppercase tracking-wider">Settings</h3>
-              <button onClick={() => setShowSettings(false)} className="text-xs font-bold text-zinc-400 uppercase">Close</button>
-            </div>
-            <div className="space-y-6">
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-zinc-400 mb-2">Wait between items</label>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="range" min="1" max="10" step="1" value={delay}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDelay(parseInt(e.target.value))}
-                    className="flex-1 accent-zinc-900 dark:accent-zinc-100"
-                  />
-                  <span className="text-sm font-mono w-8">{delay}s</span>
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-zinc-400 mb-2">Language</label>
-                <select
-                  className="w-full p-3 bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-100 rounded-xl text-sm outline-none"
-                  value={lang}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setLang(e.target.value)}
-                >
-                  <option value="nl">Dutch (nl)</option>
-                  <option value="en">English (en)</option>
-                  <option value="fr">French (fr)</option>
-                  <option value="de">German (de)</option>
-                  <option value="es">Spanish (es)</option>
-                  <option value="it">Italian (it)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-zinc-400 mb-2">Session</label>
-                <button onClick={endSession} className="w-full py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors">
-                  End session
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Settings row */}
+      <div className="px-8 py-2 flex justify-center gap-6 text-sm text-[var(--text-muted)]">
+        <label className="flex items-center gap-2">
+          <span>Delay</span>
+          <input
+            type="range" min="1" max="10" step="1" value={delay}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDelay(parseInt(e.target.value))}
+            className="w-20 accent-[var(--text-primary)]"
+          />
+          <span>{delay}s</span>
+        </label>
+        <select
+          className="bg-transparent outline-none text-xs text-[var(--text-muted)]"
+          value={lang}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setLang(e.target.value)}
+        >
+          <option value="nl">nl</option>
+          <option value="en">en</option>
+          <option value="fr">fr</option>
+          <option value="de">de</option>
+          <option value="es">es</option>
+          <option value="it">it</option>
+        </select>
+      </div>
 
       {/* Controls */}
-      <footer className="p-8 pb-12 flex flex-col items-center gap-8">
-        <div className="flex items-center justify-center gap-6">
-          <button onClick={skipBack} className="p-4 rounded-full text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all active:scale-95">
-            <SkipBack className="w-6 h-6" />
+      <footer className="px-8 py-8 flex flex-col items-center gap-6">
+        <div className="flex items-center gap-8">
+          <button onClick={skipBack} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors active:scale-95">
+            <SkipBack className="w-5 h-5" />
           </button>
 
           <button
             onClick={() => setIsPlaying(p => !p)}
-            className="w-20 h-20 flex items-center justify-center rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-xl shadow-zinc-200 dark:shadow-zinc-900 hover:scale-105 active:scale-95 transition-all"
+            className="w-16 h-16 flex items-center justify-center rounded-full border border-[var(--border-color)] hover:border-[var(--text-primary)] text-[var(--text-primary)] transition-colors active:scale-95"
           >
             {isPlaying
-              ? <Pause className="w-8 h-8 fill-current" />
-              : <Play className="w-8 h-8 fill-current ml-1" />}
+              ? <Pause className="w-6 h-6 fill-current" />
+              : <Play className="w-6 h-6 fill-current ml-0.5" />}
           </button>
 
-          <button onClick={skipForward} className="p-4 rounded-full text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all active:scale-95">
-            <SkipForward className="w-6 h-6" />
+          <button onClick={skipForward} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors active:scale-95">
+            <SkipForward className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={repeatCurrent}
-            className="flex items-center gap-2 px-6 py-3 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 active:scale-95 transition-all"
-          >
-            <Volume2 className="w-4 h-4" />
+        <div className="flex items-center gap-6 text-sm text-[var(--text-muted)]">
+          <button onClick={repeatCurrent} className="flex items-center gap-1.5 hover:text-[var(--text-primary)] transition-colors">
+            <Volume2 className="w-3.5 h-3.5" />
             Repeat
           </button>
           <button
             onClick={translateCurrent}
             disabled={translating}
-            className="flex items-center gap-2 px-6 py-3 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 active:scale-95 transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 hover:text-[var(--text-primary)] transition-colors disabled:opacity-40"
           >
-            {translating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Languages className="w-4 h-4" />}
+            {translating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
             Translate
           </button>
         </div>
-
-        {/* Translation result */}
-        <AnimatePresence>
-          {translation && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="px-6 py-3 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-2xl text-sm font-medium"
-            >
-              {translation}
-            </motion.div>
-          )}
-        </AnimatePresence>
       </footer>
     </div>
   );

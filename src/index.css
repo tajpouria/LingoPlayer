@@ -2,23 +2,35 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Dark mode color overrides */
 :root {
-  --bg-primary: #fafafa;
+  --bg-primary: #f9f7f4;
   --bg-card: #ffffff;
-  --text-primary: #18181b;
-  --text-secondary: #71717a;
-  --text-muted: #a1a1aa;
-  --border-color: #e4e4e7;
-  --border-light: #f4f4f5;
+  --text-primary: #111111;
+  --text-secondary: #333333;
+  --text-muted: #777777;
+  --border-color: #c8c5c0;
+  --border-light: #e8e5e0;
+  --font-serif: 'Georgia', 'Times New Roman', serif;
 }
 
 .dark {
-  --bg-primary: #09090b;
-  --bg-card: #18181b;
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --border-color: #27272a;
-  --border-light: #1f1f23;
+  --bg-primary: #0f0e0c;
+  --bg-card: #1a1917;
+  --text-primary: #f5f2ed;
+  --text-secondary: #c8c4bc;
+  --text-muted: #888078;
+  --border-color: #3a3733;
+  --border-light: #252320;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Georgia', serif;
+  font-size: 17px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-serif {
+  font-family: var(--font-serif);
 }
