@@ -96,11 +96,11 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
       }
     }
     
-    // Count sentences mastered today to respect the daily limit
-    const todayMastered = (recallState?.sessionHistory || [])
+    // Count sentences asked today (regardless of outcome) to respect the daily limit
+    const todayAsked = (recallState?.sessionHistory || [])
       .filter(s => s.date === todayStr())
-      .reduce((acc, s) => acc + s.masteredSentences.length, 0);
-    const remaining = Math.max(0, DAILY_RECALL_LIMIT - todayMastered);
+      .reduce((acc, s) => acc + (s.sentencesAsked ?? s.masteredSentences.length), 0);
+    const remaining = Math.max(0, DAILY_RECALL_LIMIT - todayAsked);
 
     // Shuffle and limit
     const shuffled = [...sentences].sort(() => Math.random() - 0.5);
@@ -154,9 +154,9 @@ Practice all ${dailySentences.length} sentences. Start immediately with the firs
 
 At the END of the session, output a JSON summary:
 \`\`\`json
-{"masteredSentences":[]}
+{"sentencesAsked":0,"masteredSentences":[]}
 \`\`\`
-Use the sentence IDs in brackets below for masteredSentences (sentences I got correct on the first try).
+Use the sentence IDs in brackets below for masteredSentences (sentences I got correct on the first try). Set sentencesAsked to the total number of unique sentences presented in the session (not counting retries).
 
 Here is my data:
 
@@ -257,6 +257,11 @@ ${sentencesList}`;
       // Add date if missing
       if (!result.date) {
         result.date = todayStr();
+      }
+      
+      // Fall back to masteredSentences count if sentencesAsked was not provided
+      if (typeof result.sentencesAsked !== 'number') {
+        result.sentencesAsked = result.masteredSentences.length;
       }
       
       // Update recall state
