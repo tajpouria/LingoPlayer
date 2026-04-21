@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Settings2, BookOpen, RotateCcw, Brain, Moon, Sun } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Settings2, BookOpen, RotateCcw, Brain, Moon, Sun, Languages } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LingoRecall from './LingoRecall';
 import { useDarkMode } from './DarkModeProvider';
@@ -199,6 +199,10 @@ export default function App() {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Translation
+  const [translation, setTranslation] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
   // Keep a ref to current srs so the async player loop always reads fresh state
   const srsRef = useRef<DeckSRS>(srs);
   srsRef.current = srs;
@@ -408,6 +412,38 @@ export default function App() {
     const text = itemIndex === -1 ? currentWord.word : currentWord.sentences[itemIndex];
     if (text) speak(text);
   }
+
+  async function translateCurrent() {
+    const currentWord = sessionWords[sessionIndex];
+    if (!currentWord) return;
+    const text = itemIndex === -1 ? currentWord.word : currentWord.sentences[itemIndex];
+    if (!text) return;
+
+    // Stop playback
+    clearAudio();
+    setIsPlaying(false);
+    setTranslation(null);
+    setTranslating(true);
+
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, to: 'en' }),
+      });
+      const data = await res.json();
+      setTranslation(data.translation || 'Translation failed');
+    } catch {
+      setTranslation('Translation failed');
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  // Clear translation when moving to next item
+  useEffect(() => {
+    setTranslation(null);
+  }, [sessionIndex, itemIndex]);
 
   // ── Session lifecycle ───────────────────────────────────────────────────────
 
@@ -869,13 +905,37 @@ export default function App() {
           </button>
         </div>
 
-        <button
-          onClick={repeatCurrent}
-          className="flex items-center gap-2 px-6 py-3 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 active:scale-95 transition-all"
-        >
-          <Volume2 className="w-4 h-4" />
-          Repeat
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={repeatCurrent}
+            className="flex items-center gap-2 px-6 py-3 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 active:scale-95 transition-all"
+          >
+            <Volume2 className="w-4 h-4" />
+            Repeat
+          </button>
+          <button
+            onClick={translateCurrent}
+            disabled={translating}
+            className="flex items-center gap-2 px-6 py-3 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 active:scale-95 transition-all disabled:opacity-50"
+          >
+            {translating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Languages className="w-4 h-4" />}
+            Translate
+          </button>
+        </div>
+
+        {/* Translation result */}
+        <AnimatePresence>
+          {translation && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="px-6 py-3 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-2xl text-sm font-medium"
+            >
+              {translation}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </footer>
     </div>
   );
