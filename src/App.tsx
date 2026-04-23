@@ -9,6 +9,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Brain, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LingoRecall from './LingoRecall';
+import ActivityHeatmap from './ActivityHeatmap';
 import { useDarkMode } from './DarkModeProvider';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -156,9 +157,12 @@ export default function App() {
   const [newDeckUrl, setNewDeckUrl] = useState('');
   const [showAddDeck, setShowAddDeck] = useState(false);
 
+  const [activityData, setActivityData] = useState<{ activity: Record<string, number>; streak: number; totalDays: number } | null>(null);
+
   useEffect(() => {
     if (!hasMounted) return;
     fetch('/api/decks').then(r => r.json()).then(d => { if (Array.isArray(d)) setDecks(d); }).finally(() => setDecksLoading(false));
+    fetch('/api/activity').then(r => r.ok ? r.json() : null).then(d => { if (d) setActivityData(d); }).catch(() => {});
   }, [hasMounted]);
 
   async function addDeck() {
@@ -557,6 +561,14 @@ export default function App() {
                   <p className="text-sm text-[var(--text-muted)] text-center py-4">No decks yet.</p>
                 )}
               </div>
+
+              {activityData && (
+                <ActivityHeatmap
+                  activity={activityData.activity}
+                  streak={activityData.streak}
+                  totalDays={activityData.totalDays}
+                />
+              )}
 
               <div className="pt-6">
                 {showAddDeck ? (
