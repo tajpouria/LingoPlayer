@@ -535,7 +535,13 @@ export default function App() {
           <p className="text-[var(--text-muted)] text-center text-base mb-10">Select a deck</p>
 
           {decksLoading ? (
-            <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-[var(--text-muted)]" /></div>
+            <div className="space-y-2 mb-8 animate-pulse">
+              {[80, 65, 72].map((w, i) => (
+                <div key={i} className="flex items-center border border-[var(--border-color)] px-4 py-3">
+                  <div className="h-4 rounded bg-[var(--border-color)]" style={{ width: `${w}%` }} />
+                </div>
+              ))}
+            </div>
           ) : (
             <>
               <div className="space-y-2 mb-8">
