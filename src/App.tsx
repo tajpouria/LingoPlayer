@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Brain } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Brain, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LingoRecall from './LingoRecall';
 import { useDarkMode } from './DarkModeProvider';
@@ -21,6 +21,8 @@ interface Row {
 interface Deck {
   name: string;
   url: string;
+  dailyLearnLimit?: number;
+  dailyRecallLimit?: number;
 }
 
 interface WordSRS {
@@ -41,7 +43,8 @@ type SessionMode = 'learn' | 'review' | 'recall';
 // Box 1: every day · Box 2: every 3 days · Box 3: every week
 // Box 4: every 2 weeks · Box 5: once a month
 const BOX_INTERVALS = [0, 1, 3, 7, 14, 30];
-const DAILY_NEW_LIMIT = 25;
+const DEFAULT_DAILY_LEARN_LIMIT = 25;
+const DEFAULT_DAILY_RECALL_LIMIT = 10;
 
 // ── SRS helpers ───────────────────────────────────────────────────────────────
 
@@ -104,10 +107,10 @@ function mergeSRS(local: DeckSRS, remote: DeckSRS): DeckSRS {
   return merged;
 }
 
-function getNewWords(data: Row[], srs: DeckSRS): Row[] {
+function getNewWords(data: Row[], srs: DeckSRS, dailyLimit = DEFAULT_DAILY_LEARN_LIMIT): Row[] {
   const today = todayStr();
   const learnedToday = (Object.values(srs) as WordSRS[]).filter(w => w.learnedDate === today).length;
-  const remaining = Math.max(0, DAILY_NEW_LIMIT - learnedToday);
+  const remaining = Math.max(0, dailyLimit - learnedToday);
   if (remaining === 0) return [];
   return data.filter(row => !srs[row.word]).slice(0, remaining);
 }
@@ -182,6 +185,12 @@ export default function App() {
   const [srs, setSRS] = useState<DeckSRS>({});
   const [recallRemaining, setRecallRemaining] = useState<number | null>(null);
   const [recallTotal, setRecallTotal] = useState<number | null>(null);
+
+  // Deck settings panel
+  const [showDeckSettings, setShowDeckSettings] = useState(false);
+  const [editLearnLimit, setEditLearnLimit] = useState('');
+  const [editRecallLimit, setEditRecallLimit] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
 
   // Session
   const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
@@ -271,7 +280,8 @@ export default function App() {
             const todayAsked = (recallState.sessionHistory || [])
               .filter((s: { date: string }) => s.date === today)
               .reduce((acc: number, s: { sentencesAsked?: number; masteredSentences: string[] }) => acc + (s.sentencesAsked ?? (s.masteredSentences || []).length), 0);
-            const dailyLimit = Math.max(0, 25 - todayAsked);
+            const recallLimit = decks[selectedDeckIndex!]?.dailyRecallLimit ?? DEFAULT_DAILY_RECALL_LIMIT;
+            const dailyLimit = Math.max(0, recallLimit - todayAsked);
             const completedSet = new Set(recallState.completedSentences || []);
             let availableSentences = 0;
             for (const row of rows) {
@@ -445,7 +455,8 @@ export default function App() {
   // ── Session lifecycle ───────────────────────────────────────────────────────
 
   function startSession(mode: SessionMode) {
-    const words = mode === 'learn' ? getNewWords(data, srs) : getDueWords(data, srs);
+    const learnLimit = selectedDeckIndex !== null ? (decks[selectedDeckIndex].dailyLearnLimit ?? DEFAULT_DAILY_LEARN_LIMIT) : DEFAULT_DAILY_LEARN_LIMIT;
+    const words = mode === 'learn' ? getNewWords(data, srs, learnLimit) : getDueWords(data, srs);
     promotedRef.current = new Set();
     setSessionMode(mode);
     setSessionWords(words);
@@ -466,7 +477,8 @@ export default function App() {
         const todayAsked = (recallState.sessionHistory || [])
           .filter((s: { date: string }) => s.date === today)
           .reduce((acc: number, s: { sentencesAsked?: number; masteredSentences: string[] }) => acc + (s.sentencesAsked ?? (s.masteredSentences || []).length), 0);
-        const dailyLimit = Math.max(0, 25 - todayAsked);
+        const recallLimit = decks[selectedDeckIndex!]?.dailyRecallLimit ?? DEFAULT_DAILY_RECALL_LIMIT;
+        const dailyLimit = Math.max(0, recallLimit - todayAsked);
         const completedSet = new Set(recallState.completedSentences || []);
         let availableSentences = 0;
         for (const row of data) {
@@ -595,7 +607,10 @@ export default function App() {
 
   // Session selection
   if (sessionMode === null) {
-    const newWords = getNewWords(data, srs);
+    const deck = decks[selectedDeckIndex];
+    const learnLimit = deck.dailyLearnLimit ?? DEFAULT_DAILY_LEARN_LIMIT;
+    const recallLimit = deck.dailyRecallLimit ?? DEFAULT_DAILY_RECALL_LIMIT;
+    const newWords = getNewWords(data, srs, learnLimit);
     const dueWords = getDueWords(data, srs);
 
     return (
@@ -641,10 +656,98 @@ export default function App() {
             })}
           </div>
 
-          <button onClick={changeDeck} className="mt-8 w-full text-center text-base text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-            ← Decks
-          </button>
+          <div className="mt-8 flex items-center justify-between">
+            <button onClick={changeDeck} className="text-base text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+              ← Decks
+            </button>
+            <button
+              onClick={() => { setEditLearnLimit(String(learnLimit)); setEditRecallLimit(String(recallLimit)); setShowDeckSettings(true); }}
+              className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
         </div>
+
+        {/* Settings modal */}
+        <AnimatePresence>
+          {showDeckSettings && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="fixed inset-0 bg-[var(--bg-primary)] flex items-center justify-center p-8 z-50"
+              onClick={e => { if (e.target === e.currentTarget) setShowDeckSettings(false); }}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.15 }}
+                className="w-full max-w-sm"
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <p className="font-serif text-2xl font-normal">Daily limits</p>
+                  <button onClick={() => setShowDeckSettings(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-xl leading-none">×</button>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-4">
+                    <div>
+                      <p className="font-medium">Learn</p>
+                      <p className="text-xs text-[var(--text-muted)] mt-0.5">New words per day</p>
+                    </div>
+                    <input
+                      type="number" min="1" max="500"
+                      value={editLearnLimit}
+                      onChange={e => setEditLearnLimit(e.target.value)}
+                      className="w-16 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-right text-lg"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-4">
+                    <div>
+                      <p className="font-medium">Recall</p>
+                      <p className="text-xs text-[var(--text-muted)] mt-0.5">Sentences per day</p>
+                    </div>
+                    <input
+                      type="number" min="1" max="500"
+                      value={editRecallLimit}
+                      onChange={e => setEditRecallLimit(e.target.value)}
+                      className="w-16 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-right text-lg"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  disabled={savingSettings}
+                  onClick={async () => {
+                    const newLearn = Math.max(1, parseInt(editLearnLimit) || learnLimit);
+                    const newRecall = Math.max(1, parseInt(editRecallLimit) || recallLimit);
+                    setSavingSettings(true);
+                    try {
+                      const res = await fetch('/api/decks', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ index: selectedDeckIndex, dailyLearnLimit: newLearn, dailyRecallLimit: newRecall }),
+                      });
+                      const updated = await res.json();
+                      if (Array.isArray(updated)) setDecks(updated);
+                      setShowDeckSettings(false);
+                    } finally {
+                      setSavingSettings(false);
+                    }
+                  }}
+                  className="mt-8 w-full py-3 text-base font-medium border border-[var(--border-color)] hover:border-[var(--text-primary)] transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+                >
+                  {savingSettings && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Save
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -656,6 +759,7 @@ export default function App() {
         deckName={decks[selectedDeckIndex].name}
         data={data}
         srs={srs}
+        dailyRecallLimit={decks[selectedDeckIndex].dailyRecallLimit ?? DEFAULT_DAILY_RECALL_LIMIT}
         onBack={endSession}
       />
     );

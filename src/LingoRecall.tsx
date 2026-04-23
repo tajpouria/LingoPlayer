@@ -41,12 +41,9 @@ interface LingoRecallProps {
   deckName: string;
   data: Row[];
   srs: DeckSRS;
+  dailyRecallLimit?: number;
   onBack: () => void;
 }
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const DAILY_RECALL_LIMIT = 25;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -61,7 +58,7 @@ function sentenceId(word: string, sentenceIndex: number): string {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecallProps) {
+export default function LingoRecall({ deckName, data, srs, dailyRecallLimit = 10, onBack }: LingoRecallProps) {
   const { isDark: _isDark } = useDarkMode();
   const [recallState, setRecallState] = useState<RecallState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,7 +97,7 @@ export default function LingoRecall({ deckName, data, srs, onBack }: LingoRecall
     const todayAsked = (recallState?.sessionHistory || [])
       .filter(s => s.date === todayStr())
       .reduce((acc, s) => acc + (s.sentencesAsked ?? s.masteredSentences.length), 0);
-    const remaining = Math.max(0, DAILY_RECALL_LIMIT - todayAsked);
+    const remaining = Math.max(0, dailyRecallLimit - todayAsked);
 
     // Shuffle and limit
     const shuffled = [...sentences].sort(() => Math.random() - 0.5);

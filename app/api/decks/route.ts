@@ -5,6 +5,8 @@ import { readUserJson, writeUserJson } from '@/src/lib/s3';
 interface Deck {
   name: string;
   url: string;
+  dailyLearnLimit?: number;
+  dailyRecallLimit?: number;
 }
 
 const DECKS_FILE = 'decks.json';
@@ -43,6 +45,32 @@ export async function POST(req: NextRequest) {
     if (e.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     console.error('Deck POST error:', e);
     return NextResponse.json({ error: 'Failed to save deck' }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const email = await getEmail(req);
+    const { index, dailyLearnLimit, dailyRecallLimit } = await req.json();
+
+    if (typeof index !== 'number') {
+      return NextResponse.json({ error: 'index is required' }, { status: 400 });
+    }
+
+    const decks = await readUserJson<Deck[]>(email, DECKS_FILE, []);
+    if (index < 0 || index >= decks.length) {
+      return NextResponse.json({ error: 'Invalid index' }, { status: 400 });
+    }
+
+    if (typeof dailyLearnLimit === 'number') decks[index].dailyLearnLimit = Math.max(1, Math.floor(dailyLearnLimit));
+    if (typeof dailyRecallLimit === 'number') decks[index].dailyRecallLimit = Math.max(1, Math.floor(dailyRecallLimit));
+
+    await writeUserJson(email, DECKS_FILE, decks);
+    return NextResponse.json(decks);
+  } catch (e: any) {
+    if (e.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    console.error('Deck PATCH error:', e);
+    return NextResponse.json({ error: 'Failed to update deck' }, { status: 500 });
   }
 }
 
