@@ -522,8 +522,6 @@ export default function App() {
             <>
               <div className="space-y-2 mb-8">
                 {decks.map((deck, index) => {
-                  const deckSRS = hasMounted ? loadSRS(deck.name) : {};
-                  const reviewCount = (Object.values(deckSRS) as WordSRS[]).filter(w => w.box >= 1 && w.nextReviewDate <= todayStr()).length;
                   return (
                     <div key={index} className="relative group flex items-center">
                       <button
@@ -531,9 +529,6 @@ export default function App() {
                         className="flex-1 text-left py-3 border-b border-[var(--border-color)] hover:border-[var(--text-primary)] transition-colors"
                       >
                         <span className="font-medium text-lg">{deck.name}</span>
-                        {reviewCount > 0 && (
-                          <span className="ml-2 text-sm text-[var(--text-muted)]">({reviewCount} due)</span>
-                        )}
                       </button>
                       <button
                         onClick={() => { if (confirm(`Delete "${deck.name}"?`)) removeDeck(index); }}
@@ -607,11 +602,10 @@ export default function App() {
       <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col items-center justify-center p-8">
         <div className="w-full max-w-sm">
           <p className="font-serif text-3xl font-normal text-center mb-2">{decks[selectedDeckIndex].name}</p>
-          <p className="text-[var(--text-muted)] text-center text-base mb-2">{data.length} words</p>
-          <div className="flex justify-center gap-6 text-sm text-[var(--text-muted)] mb-10">
-            <span><span className="text-[var(--text-primary)] font-medium">{data.filter(row => !srs[row.word]).length}</span> to learn</span>
-            <span><span className="text-[var(--text-primary)] font-medium">{dueWords.length}</span> to review</span>
-            <span><span className="text-[var(--text-primary)] font-medium">{recallTotal ?? 0}</span> to recall</span>
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <p className="text-[var(--text-muted)] text-center text-base mb-2">{data.length} words</p>
+            <p className="text-[var(--text-muted)] text-center text-base mb-2">|</p>
+            <p className="text-[var(--text-muted)] text-center text-base mb-2">{data.reduce((acc, row) => acc + row.sentences.length, 0)} sentences</p>
           </div>
 
           <div className="space-y-px">
