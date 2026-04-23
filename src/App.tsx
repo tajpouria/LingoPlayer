@@ -268,10 +268,10 @@ export default function App() {
           .then(r => r.json())
           .then(recallState => {
             const today = new Date().toISOString().split('T')[0];
-            const todayMastered = (recallState.sessionHistory || [])
+            const todayAsked = (recallState.sessionHistory || [])
               .filter((s: { date: string }) => s.date === today)
-              .reduce((acc: number, s: { masteredSentences: string[] }) => acc + (s.masteredSentences || []).length, 0);
-            const dailyLimit = Math.max(0, 25 - todayMastered);
+              .reduce((acc: number, s: { sentencesAsked?: number; masteredSentences: string[] }) => acc + (s.sentencesAsked ?? (s.masteredSentences || []).length), 0);
+            const dailyLimit = Math.max(0, 25 - todayAsked);
             const completedSet = new Set(recallState.completedSentences || []);
             let availableSentences = 0;
             for (const row of rows) {
@@ -463,10 +463,10 @@ export default function App() {
       .then(r => r.json())
       .then(recallState => {
         const today = new Date().toISOString().split('T')[0];
-        const todayMastered = (recallState.sessionHistory || [])
+        const todayAsked = (recallState.sessionHistory || [])
           .filter((s: { date: string }) => s.date === today)
-          .reduce((acc: number, s: { masteredSentences: string[] }) => acc + (s.masteredSentences || []).length, 0);
-        const dailyLimit = Math.max(0, 25 - todayMastered);
+          .reduce((acc: number, s: { sentencesAsked?: number; masteredSentences: string[] }) => acc + (s.sentencesAsked ?? (s.masteredSentences || []).length), 0);
+        const dailyLimit = Math.max(0, 25 - todayAsked);
         const completedSet = new Set(recallState.completedSentences || []);
         let availableSentences = 0;
         for (const row of data) {
