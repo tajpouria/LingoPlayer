@@ -154,6 +154,7 @@ export default function App() {
   const [decksLoading, setDecksLoading] = useState(true);
   const [newDeckName, setNewDeckName] = useState('');
   const [newDeckUrl, setNewDeckUrl] = useState('');
+  const [showAddDeck, setShowAddDeck] = useState(false);
 
   useEffect(() => {
     if (!hasMounted) return;
@@ -169,6 +170,7 @@ export default function App() {
     if (Array.isArray(updated)) setDecks(updated);
     setNewDeckName('');
     setNewDeckUrl('');
+    setShowAddDeck(false);
   }
 
   async function removeDeck(index: number) {
@@ -535,10 +537,10 @@ export default function App() {
               <div className="space-y-2 mb-8">
                 {decks.map((deck, index) => {
                   return (
-                    <div key={index} className="relative group flex items-center">
+                    <div key={index} className="relative group flex items-center border border-[var(--border-color)] hover:border-[var(--text-primary)] transition-colors px-4">
                       <button
                         onClick={() => setSelectedDeckIndex(index)}
-                        className="flex-1 text-left py-3 border-b border-[var(--border-color)] hover:border-[var(--text-primary)] transition-colors"
+                        className="flex-1 text-left py-3"
                       >
                         <span className="font-medium text-lg">{deck.name}</span>
                       </button>
@@ -556,28 +558,48 @@ export default function App() {
                 )}
               </div>
 
-              <div className="space-y-2 border-t border-[var(--border-color)] pt-6">
-                <input
-                  type="text"
-                  placeholder="Deck name"
-                  value={newDeckName}
-                  onChange={e => setNewDeckName(e.target.value)}
-                  className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)]"
-                />
-                <input
-                  type="url"
-                  placeholder="TSV URL"
-                  value={newDeckUrl}
-                  onChange={e => setNewDeckUrl(e.target.value)}
-                  className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)]"
-                />
-                <button
-                  onClick={addDeck}
-                  disabled={!newDeckName.trim() || !newDeckUrl.trim()}
-                  className="w-full mt-2 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-30 transition-colors text-center"
-                >
-                  + Add deck
-                </button>
+              <div className="pt-6">
+                {showAddDeck ? (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Deck name"
+                      value={newDeckName}
+                      onChange={e => setNewDeckName(e.target.value)}
+                      autoFocus
+                      className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)]"
+                    />
+                    <input
+                      type="url"
+                      placeholder="TSV URL"
+                      value={newDeckUrl}
+                      onChange={e => setNewDeckUrl(e.target.value)}
+                      className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)]"
+                    />
+                    <div className="flex gap-4 mt-2">
+                      <button
+                        onClick={() => { setShowAddDeck(false); setNewDeckName(''); setNewDeckUrl(''); }}
+                        className="flex-1 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-center"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={addDeck}
+                        disabled={!newDeckName.trim() || !newDeckUrl.trim()}
+                        className="flex-1 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-30 transition-colors text-center"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowAddDeck(true)}
+                    className="w-full py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-center"
+                  >
+                    + Add deck
+                  </button>
+                )}
               </div>
             </>
           )}
