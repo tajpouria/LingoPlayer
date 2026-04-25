@@ -19,8 +19,7 @@
     "nodemailer": "^8.0.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "translate-google": "^1.5.0",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "translate-google": "^1.5.0"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.0",

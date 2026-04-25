@@ -9,6 +9,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Brain, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LingoRecall from './LingoRecall';
+import DeckSheet from './DeckSheet';
 import ActivityHeatmap from './ActivityHeatmap';
 import { useDarkMode } from './DarkModeProvider';
 
@@ -21,7 +22,6 @@ interface Row {
 
 interface Deck {
   name: string;
-  url: string;
   dailyLearnLimit?: number;
   dailyRecallLimit?: number;
 }
@@ -154,8 +154,10 @@ export default function App() {
   const [decks, setDecks] = useState<Deck[]>([]);
   const [decksLoading, setDecksLoading] = useState(true);
   const [newDeckName, setNewDeckName] = useState('');
-  const [newDeckUrl, setNewDeckUrl] = useState('');
   const [showAddDeck, setShowAddDeck] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const [showDeleteDeck, setShowDeleteDeck] = useState(false);
+  const [deleteDeckInput, setDeleteDeckInput] = useState('');
 
   const [activityData, setActivityData] = useState<{ activity: Record<string, number>; streak: number; totalDays: number } | null>(null);
 
@@ -167,13 +169,11 @@ export default function App() {
 
   async function addDeck() {
     const name = newDeckName.trim();
-    const url = newDeckUrl.trim();
-    if (!name || !url) return;
-    const res = await fetch('/api/decks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, url }) });
+    if (!name) return;
+    const res = await fetch('/api/decks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
     const updated = await res.json();
     if (Array.isArray(updated)) setDecks(updated);
     setNewDeckName('');
-    setNewDeckUrl('');
     setShowAddDeck(false);
   }
 
@@ -256,29 +256,24 @@ export default function App() {
     const deckName = decks[selectedDeckIndex].name;
 
     Promise.all([
-      fetch(decks[selectedDeckIndex].url).then(res => {
+      fetch(`/api/deck-data?deck=${encodeURIComponent(deckName)}`).then(res => {
         if (!res.ok) throw new Error('Failed to fetch data');
-        return res.text();
+        return res.json() as Promise<Row[]>;
       }),
       fetchRemoteSRS(deckName),
     ])
-      .then(([text, remoteSRS]) => {
-        const rows = text.split('\n').map(line => {
-          const parts = line.split('\t').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
-          return { word: parts[0] || '', sentences: parts.slice(1) };
-        }).filter((r: Row) => r.word);
-        setData(rows);
+      .then(([rows, remoteSRS]) => {
+        const validRows = Array.isArray(rows) ? rows : [];
+        setData(validRows);
 
         const localSRS = loadSRS(deckName);
         const merged = mergeSRS(localSRS, remoteSRS);
         setSRS(merged);
         saveSRS(deckName, merged);
-        // If remote was stale, push merged version back
         if (Object.keys(localSRS).length > Object.keys(remoteSRS).length) {
           saveRemoteSRS(deckName, merged);
         }
-        
-        // Fetch recall state to calculate remaining
+
         fetch(`/api/recall?deck=${encodeURIComponent(deckName)}`)
           .then(r => r.json())
           .then(recallState => {
@@ -290,7 +285,7 @@ export default function App() {
             const dailyLimit = Math.max(0, recallLimit - todayAsked);
             const completedSet = new Set(recallState.completedSentences || []);
             let availableSentences = 0;
-            for (const row of rows) {
+            for (const row of validRows) {
               const wordSRS = merged[row.word];
               if (wordSRS && wordSRS.box >= 1) {
                 for (let i = 0; i < row.sentences.length; i++) {
@@ -303,7 +298,7 @@ export default function App() {
             setRecallRemaining(Math.min(dailyLimit, availableSentences));
           })
           .catch(() => setRecallRemaining(null));
-        
+
         setLoading(false);
       })
       .catch((err: Error) => {
@@ -522,6 +517,9 @@ export default function App() {
     setData([]);
     setSRS({});
     setRecallRemaining(null);
+    setShowEditor(false);
+    setShowDeleteDeck(false);
+    setDeleteDeckInput('');
   }
 
   // ── Screens ──────────────────────────────────────────────────────────────────
@@ -547,18 +545,12 @@ export default function App() {
               <div className="space-y-2 mb-8">
                 {decks.map((deck, index) => {
                   return (
-                    <div key={index} className="relative group flex items-center border border-[var(--border-color)] hover:border-[var(--text-primary)] transition-colors px-4">
+                    <div key={index} className="border border-[var(--border-color)] hover:border-[var(--text-primary)] transition-colors px-4">
                       <button
                         onClick={() => setSelectedDeckIndex(index)}
-                        className="flex-1 text-left py-3"
+                        className="w-full text-left py-3"
                       >
                         <span className="font-medium text-lg">{deck.name}</span>
-                      </button>
-                      <button
-                        onClick={() => { if (confirm(`Delete "${deck.name}"?`)) removeDeck(index); }}
-                        className="opacity-0 group-hover:opacity-100 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all px-2"
-                      >
-                        ×
                       </button>
                     </div>
                   );
@@ -584,26 +576,20 @@ export default function App() {
                       placeholder="Deck name"
                       value={newDeckName}
                       onChange={e => setNewDeckName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') addDeck(); }}
                       autoFocus
-                      className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)]"
-                    />
-                    <input
-                      type="url"
-                      placeholder="TSV URL"
-                      value={newDeckUrl}
-                      onChange={e => setNewDeckUrl(e.target.value)}
                       className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)]"
                     />
                     <div className="flex gap-4 mt-2">
                       <button
-                        onClick={() => { setShowAddDeck(false); setNewDeckName(''); setNewDeckUrl(''); }}
+                        onClick={() => { setShowAddDeck(false); setNewDeckName(''); }}
                         className="flex-1 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-center"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={addDeck}
-                        disabled={!newDeckName.trim() || !newDeckUrl.trim()}
+                        disabled={!newDeckName.trim()}
                         className="flex-1 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-30 transition-colors text-center"
                       >
                         Add
@@ -623,6 +609,18 @@ export default function App() {
           )}
         </div>
       </div>
+    );
+  }
+
+  if (showEditor && selectedDeckIndex !== null) {
+    return (
+      <DeckSheet
+        deckName={decks[selectedDeckIndex].name}
+        onBack={updatedRows => {
+          setData(updatedRows);
+          setShowEditor(false);
+        }}
+      />
     );
   }
 
@@ -700,12 +698,20 @@ export default function App() {
             <button onClick={changeDeck} className="text-base text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
               ← Decks
             </button>
-            <button
-              onClick={() => { setEditLearnLimit(String(learnLimit)); setEditRecallLimit(String(recallLimit)); setShowDeckSettings(true); }}
-              className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setShowEditor(true)}
+                className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                Edit words
+              </button>
+              <button
+                onClick={() => { setEditLearnLimit(String(learnLimit)); setEditRecallLimit(String(recallLimit)); setShowDeckSettings(true); }}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -784,6 +790,75 @@ export default function App() {
                   {savingSettings && <Loader2 className="w-4 h-4 animate-spin" />}
                   Save
                 </button>
+
+                <div className="mt-10 pt-6 border-t border-[var(--border-color)]">
+                  <button
+                    onClick={() => { setShowDeckSettings(false); setShowDeleteDeck(true); setDeleteDeckInput(''); }}
+                    className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    Delete deck…
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Delete deck confirmation modal */}
+        <AnimatePresence>
+          {showDeleteDeck && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="fixed inset-0 bg-[var(--bg-primary)] flex items-center justify-center p-8 z-50"
+              onClick={e => { if (e.target === e.currentTarget) { setShowDeleteDeck(false); setDeleteDeckInput(''); } }}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.15 }}
+                className="w-full max-w-sm"
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <p className="font-serif text-2xl font-normal">Delete deck</p>
+                  <button
+                    onClick={() => { setShowDeleteDeck(false); setDeleteDeckInput(''); }}
+                    className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-xl leading-none"
+                  >×</button>
+                </div>
+
+                <p className="text-sm text-[var(--text-muted)] mb-6">
+                  This will permanently delete <span className="font-medium text-[var(--text-primary)]">{deck.name}</span> and all its data. Type the deck name to confirm.
+                </p>
+
+                <input
+                  type="text"
+                  placeholder={deck.name}
+                  value={deleteDeckInput}
+                  onChange={e => setDeleteDeckInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Escape') { setShowDeleteDeck(false); setDeleteDeckInput(''); } }}
+                  autoFocus
+                  className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)] mb-8"
+                />
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setShowDeleteDeck(false); setDeleteDeckInput(''); }}
+                    className="flex-1 py-2.5 text-sm border border-[var(--border-color)] hover:border-[var(--text-primary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={deleteDeckInput !== deck.name}
+                    onClick={() => { removeDeck(selectedDeckIndex); changeDeck(); }}
+                    className="flex-1 py-2.5 text-sm border border-[var(--border-color)] hover:border-[var(--text-primary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
               </motion.div>
             </motion.div>
           )}

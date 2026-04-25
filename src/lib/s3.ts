@@ -49,3 +49,21 @@ export async function writeUserJson(email: string, file: string, data: unknown):
     ContentType: 'application/json',
   }));
 }
+
+export async function readUserText(email: string, file: string): Promise<string | null> {
+  try {
+    const res = await s3.send(new GetObjectCommand({ Bucket: env.s3Bucket, Key: userKey(email, file) }));
+    return (await res.Body?.transformToString()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeUserText(email: string, file: string, text: string, contentType = 'text/plain'): Promise<void> {
+  await s3.send(new PutObjectCommand({
+    Bucket: env.s3Bucket,
+    Key: userKey(email, file),
+    Body: text,
+    ContentType: contentType,
+  }));
+}

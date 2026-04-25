@@ -4,7 +4,6 @@ import { readUserJson, writeUserJson } from '@/src/lib/s3';
 
 interface Deck {
   name: string;
-  url: string;
   dailyLearnLimit?: number;
   dailyRecallLimit?: number;
 }
@@ -31,14 +30,14 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const email = await getEmail(req);
-    const { name, url } = await req.json();
+    const { name } = await req.json();
 
-    if (!name || !url || typeof name !== 'string' || typeof url !== 'string') {
-      return NextResponse.json({ error: 'name and url are required' }, { status: 400 });
+    if (!name || typeof name !== 'string') {
+      return NextResponse.json({ error: 'name is required' }, { status: 400 });
     }
 
     const decks = await readUserJson<Deck[]>(email, DECKS_FILE, []);
-    decks.push({ name: name.trim(), url: url.trim() });
+    decks.push({ name: name.trim() });
     await writeUserJson(email, DECKS_FILE, decks);
     return NextResponse.json(decks);
   } catch (e: any) {

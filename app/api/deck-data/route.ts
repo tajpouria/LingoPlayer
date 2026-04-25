@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/src/lib/jwt';
-import { readUserJson, writeUserJson } from '@/src/lib/s3';
+import { readUserText, writeUserText, readUserJson } from '@/src/lib/s3';
 
 interface Row {
   word: string;
@@ -14,8 +14,66 @@ async function getEmail(req: NextRequest): Promise<string> {
   return email;
 }
 
-function deckFile(deckName: string): string {
-  return `deck-data-${deckName.replace(/[^a-zA-Z0-9._-]/g, '_')}.json`;
+function safeName(deckName: string): string {
+  return deckName.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function csvFile(deckName: string): string {
+  return `deck-data-${safeName(deckName)}.csv`;
+}
+
+function jsonFile(deckName: string): string {
+  return `deck-data-${safeName(deckName)}.json`;
+}
+
+function escapeCsv(value: string): string {
+  if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+function rowsToCsv(rows: Row[]): string {
+  return rows
+    .map(r => [r.word, ...r.sentences].map(escapeCsv).join(','))
+    .join('\n');
+}
+
+function csvToRows(csv: string): Row[] {
+  return csv
+    .split('\n')
+    .map(line => line.trimEnd())
+    .filter(line => line.length > 0)
+    .map(line => {
+      const parts = parseCsvLine(line);
+      return { word: parts[0] ?? '', sentences: parts.slice(1).filter(s => s.length > 0) };
+    })
+    .filter(r => r.word.trim().length > 0);
 }
 
 export async function GET(req: NextRequest) {
@@ -23,8 +81,15 @@ export async function GET(req: NextRequest) {
     const email = await getEmail(req);
     const deck = req.nextUrl.searchParams.get('deck');
     if (!deck) return NextResponse.json({ error: 'deck is required' }, { status: 400 });
-    const rows = await readUserJson<Row[]>(email, deckFile(deck), []);
-    return NextResponse.json(rows);
+
+    const csv = await readUserText(email, csvFile(deck));
+    if (csv !== null) {
+      return NextResponse.json(csvToRows(csv));
+    }
+
+    // Migrate legacy JSON file if CSV doesn't exist yet
+    const legacy = await readUserJson<Row[]>(email, jsonFile(deck), []);
+    return NextResponse.json(legacy);
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -39,8 +104,9 @@ export async function PUT(req: NextRequest) {
     }
     const clean: Row[] = rows
       .filter((r: Row) => r.word && typeof r.word === 'string')
-      .map((r: Row) => ({ word: String(r.word).trim(), sentences: (r.sentences || []).map(String) }));
-    await writeUserJson(email, deckFile(deck), clean);
+      .map((r: Row) => ({ word: String(r.word).trim(), sentences: (r.sentences || []).map(String).filter(s => s.trim()) }));
+
+    await writeUserText(email, csvFile(deck), rowsToCsv(clean), 'text/csv');
     return NextResponse.json({ ok: true, count: clean.length });
   } catch (e: any) {
     if (e.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
