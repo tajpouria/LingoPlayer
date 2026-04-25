@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { Loader2, Plus, Volume2, Languages } from 'lucide-react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { Loader2, Plus, Volume2, Languages, Wand2, Copy, Check, AlertCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 interface Row {
@@ -29,16 +29,29 @@ function cellHash(language: string, text: string): string {
   return h.toString(16).padStart(8, '0');
 }
 
+function cleanRows(r: Row[]): Row[] {
+  return r
+    .filter(row => row.word.trim())
+    .map(row => ({ word: row.word.trim(), sentences: row.sentences.filter(s => s.trim()) }));
+}
+
 export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
 
-  // Cell hover popup state
+  // Cell hover popup
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [translationCache, setTranslationCache] = useState<Record<string, string>>({});
   const [translatingText, setTranslatingText] = useState<string | null>(null);
+
+  // Generate-examples modal
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [generatePaste, setGeneratePaste] = useState('');
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [promptCopied, setPromptCopied] = useState(false);
+  const [applySuccess, setApplySuccess] = useState(false);
 
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const savedTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -48,6 +61,8 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
 
   const cellRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // ── Data load ─────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     fetch(`/api/deck-data?deck=${encodeURIComponent(deckName)}`)
@@ -63,11 +78,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
       .finally(() => setLoading(false));
   }, [deckName]);
 
-  function cleanRows(r: Row[]): Row[] {
-    return r
-      .filter(row => row.word.trim())
-      .map(row => ({ word: row.word.trim(), sentences: row.sentences.filter(s => s.trim()) }));
-  }
+  // ── Autosave ──────────────────────────────────────────────────────────────────
 
   async function persist(r: Row[]) {
     await fetch('/api/deck-data', {
@@ -151,6 +162,92 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
     }
   }
 
+  // ── Generate-examples prompt ──────────────────────────────────────────────────
+
+  const generatePrompt = useMemo(() => {
+    const cleaned = cleanRows(rows);
+    const missingRows = cleaned.filter(r => r.sentences.length < 3);
+    if (missingRows.length === 0) return null;
+
+    // Up to 100 most-recently-added rows that have at least one example — used
+    // to show the AI the vocabulary level without repeating the missing ones.
+    const contextRows = cleaned.filter(r => r.sentences.length === 3).slice(-100);
+
+    const contextBlock = contextRows.length > 0
+      ? contextRows.map(r => [r.word, ...r.sentences].join(',')).join('\n')
+      : '(no complete rows yet)';
+
+    const missingBlock = missingRows
+      .map(r => [r.word, ...r.sentences].join(','))
+      .join('\n');
+
+    return `Generate two more examples for each word that is missing examples on the same level to help learning the word, try to reuse the words from the list and introduce new words if needed, keep it on a same level as other words and sentences, use the most common examples that are used on a daily basis. Each must have three examples in total, keeping the examples I already provided in a spreadsheet format, only give for the rows that are missing. No headers for the output only values. Try to not introduce new or too complex words. Give me the answer here and in json.
+
+Here is my vocabulary list for context (${contextRows.length} words — use these to calibrate the difficulty and reuse vocabulary where natural):
+
+${contextBlock}
+
+Words missing examples — generate so each reaches exactly 3 total, keeping what I already have verbatim:
+
+${missingBlock}
+
+Reply with a JSON array only (no other prose), like this:
+\`\`\`json
+[{"word":"<word>","examples":["sentence 1","sentence 2","sentence 3"]},...]
+\`\`\`
+Only include the words listed in the "missing" section above. Keep my existing examples exactly as written. Only generate the ones needed to bring each word to 3 examples.`;
+  }, [rows]);
+
+  const hasMissingExamples = generatePrompt !== null;
+
+  async function copyPrompt() {
+    if (!generatePrompt) return;
+    try {
+      await navigator.clipboard.writeText(generatePrompt);
+      setPromptCopied(true);
+      setTimeout(() => setPromptCopied(false), 2000);
+    } catch { /* ignore */ }
+  }
+
+  function applyGenerated() {
+    setGenerateError(null);
+    try {
+      let jsonStr = generatePaste.trim();
+      const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (match) jsonStr = match[1].trim();
+
+      const result = JSON.parse(jsonStr) as Array<{ word: string; examples: string[] }>;
+      if (!Array.isArray(result)) throw new Error('Expected a JSON array.');
+
+      let appliedCount = 0;
+      setRows(prev => prev.map(row => {
+        const entry = result.find(r =>
+          typeof r.word === 'string' &&
+          r.word.trim().toLowerCase() === row.word.trim().toLowerCase()
+        );
+        if (!entry || !Array.isArray(entry.examples)) return row;
+        const sentences = entry.examples.slice(0, 3).map(String);
+        while (sentences.length < 3) sentences.push('');
+        appliedCount++;
+        return { ...row, sentences };
+      }));
+
+      if (appliedCount === 0) {
+        throw new Error('No matching words found. Make sure the words in the JSON match your sheet exactly.');
+      }
+
+      setApplySuccess(true);
+      setTimeout(() => {
+        setShowGenerateModal(false);
+        setApplySuccess(false);
+        setGeneratePaste('');
+        setGenerateError(null);
+      }, 1500);
+    } catch (e) {
+      setGenerateError((e as Error).message);
+    }
+  }
+
   // ── Cell helpers ──────────────────────────────────────────────────────────────
 
   function autoResize(el: HTMLTextAreaElement) {
@@ -158,8 +255,6 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
     el.style.height = `${el.scrollHeight}px`;
   }
 
-  // Resize every cell synchronously after each render so wrapped content is
-  // always fully visible — covers both initial load and mid-edit wrapping.
   useLayoutEffect(() => {
     cellRefs.current.forEach(el => autoResize(el));
   }, [rows]);
@@ -210,9 +305,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
     }
   }
 
-  function confirmDeleteRow(ri: number) {
-    setDeleteTarget(ri);
-  }
+  function confirmDeleteRow(ri: number) { setDeleteTarget(ri); }
 
   function executeDeleteRow() {
     if (deleteTarget === null) return;
@@ -274,7 +367,16 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
         >
           ← Back
         </button>
-        <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+        <div className="flex items-center gap-4 text-sm text-[var(--text-muted)]">
+          {hasMissingExamples && (
+            <button
+              onClick={() => setShowGenerateModal(true)}
+              className="flex items-center gap-1.5 hover:text-[var(--text-primary)] transition-colors"
+            >
+              <Wand2 className="w-3.5 h-3.5" />
+              <span>Generate examples</span>
+            </button>
+          )}
           <span>{wordCount} word{wordCount !== 1 ? 's' : ''}</span>
           {saveState === 'saving' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {saveState === 'saved' && <span>· Saved</span>}
@@ -360,7 +462,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
                     </td>
                   );
                 })}
-                <td className="text-center">
+                <td className="text-center align-top pt-2">
                   <button
                     onClick={() => confirmDeleteRow(ri)}
                     className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all px-2 py-1 text-base leading-none"
@@ -382,6 +484,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
         </button>
       </div>
 
+      {/* ── Delete confirmation ─────────────────────────────────────────────── */}
       <AnimatePresence>
         {deleteTarget !== null && (
           <motion.div
@@ -400,14 +503,10 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
               className="w-full max-w-xs bg-[var(--bg-primary)] border border-[var(--border-color)] p-6"
             >
               <p className="font-medium mb-1">Delete row?</p>
-              {rows[deleteTarget]?.word.trim() && (
-                <p className="text-sm text-[var(--text-muted)] mb-6 font-mono truncate">
-                  {rows[deleteTarget].word}
-                </p>
-              )}
-              {!rows[deleteTarget]?.word.trim() && (
-                <p className="text-sm text-[var(--text-muted)] mb-6">This row is empty.</p>
-              )}
+              {rows[deleteTarget]?.word.trim()
+                ? <p className="text-sm text-[var(--text-muted)] mb-6 font-mono truncate">{rows[deleteTarget].word}</p>
+                : <p className="text-sm text-[var(--text-muted)] mb-6">This row is empty.</p>
+              }
               <div className="flex gap-3">
                 <button
                   onClick={() => setDeleteTarget(null)}
@@ -421,6 +520,89 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
                 >
                   Delete
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Generate examples modal ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showGenerateModal && generatePrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+            onClick={e => { if (e.target === e.currentTarget) setShowGenerateModal(false); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.15 }}
+              className="w-full max-w-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex flex-col max-h-[90vh]"
+            >
+              {/* Modal header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-color)] shrink-0">
+                <p className="text-sm font-medium">Generate examples</p>
+                <button
+                  onClick={() => setShowGenerateModal(false)}
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-lg leading-none"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+
+                {/* Prompt section */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest">AI Prompt</p>
+                    <button
+                      onClick={copyPrompt}
+                      className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                    >
+                      {promptCopied
+                        ? <><Check className="w-3.5 h-3.5" /> Copied</>
+                        : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                    </button>
+                  </div>
+                  <pre className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap font-mono leading-relaxed max-h-64 overflow-auto border-l-2 border-[var(--border-color)] pl-4">
+                    {generatePrompt}
+                  </pre>
+                </div>
+
+                {/* Paste section */}
+                <div className="border-t border-[var(--border-color)] pt-5 space-y-3">
+                  <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest">Paste AI response</p>
+                  <textarea
+                    value={generatePaste}
+                    onChange={e => { setGeneratePaste(e.target.value); setGenerateError(null); }}
+                    placeholder="Paste the JSON array here…"
+                    className="w-full bg-transparent border border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none p-3 text-sm font-mono min-h-[140px] resize-none transition-colors placeholder:text-[var(--text-muted)]"
+                  />
+
+                  {generateError && (
+                    <div className="flex items-start gap-2 text-sm text-[var(--text-muted)]">
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      <span>{generateError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={applyGenerated}
+                    disabled={!generatePaste.trim() || applySuccess}
+                    className="text-sm underline text-[var(--text-primary)] disabled:opacity-30 flex items-center gap-1.5 transition-opacity"
+                  >
+                    {applySuccess
+                      ? <><Check className="w-4 h-4" /> Applied</>
+                      : 'Apply to sheet'}
+                  </button>
+                </div>
+
               </div>
             </motion.div>
           </motion.div>
