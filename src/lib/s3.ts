@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from './env';
 
 const s3 = new S3Client({
@@ -66,4 +67,12 @@ export async function writeUserText(email: string, file: string, text: string, c
     Body: text,
     ContentType: contentType,
   }));
+}
+
+export async function getSignedAudioUrl(email: string, hash: string): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: env.s3Bucket,
+    Key: userKey(email, `audio/${hash}.wav`),
+  });
+  return getSignedUrl(s3, command, { expiresIn: 3600 });
 }

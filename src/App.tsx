@@ -332,16 +332,42 @@ export default function App() {
 
   // ── TTS ─────────────────────────────────────────────────────────────────────
 
+  // Must stay in sync with the Python cell_hash() in generate_audio.py.
+  function cellHash(language: string, text: string): string {
+    const bytes = new TextEncoder().encode(`${language}:${text}`);
+    let h = 2166136261;
+    for (const b of bytes) {
+      h ^= b;
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h.toString(16).padStart(8, '0');
+  }
+
   const speak = useCallback((text: string, onEnd?: () => void) => {
     const audio = audioRef.current;
     if (!audio) return;
     audio.pause();
     audio.onended = null;
     audio.onerror = null;
-    audio.src = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
-    audio.onended = () => onEnd?.();
-    audio.onerror = () => onEnd?.();
-    audio.play().catch(() => setIsPlaying(false));
+
+    const fallbackSrc = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
+
+    const play = (src: string) => {
+      audio.src = src;
+      audio.onended = () => onEnd?.();
+      audio.onerror = () => onEnd?.();
+      audio.play().catch(() => setIsPlaying(false));
+    };
+
+    const hash = cellHash(lang, text);
+    fetch('/api/audio-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { url?: string } | null) => play(data?.url ?? fallbackSrc))
+      .catch(() => play(fallbackSrc));
   }, [lang]);
 
   // ── Promote current word then advance ────────────────────────────────────────
@@ -655,6 +681,7 @@ export default function App() {
     return (
       <DeckSheet
         deckName={decks[selectedDeckIndex].name}
+        lang={decks[selectedDeckIndex].lang}
         onBack={updatedRows => {
           setData(updatedRows);
           setShowEditor(false);

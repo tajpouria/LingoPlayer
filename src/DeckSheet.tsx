@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Loader2, Plus } from 'lucide-react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { Loader2, Plus, Volume2, Languages } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 interface Row {
@@ -11,17 +11,34 @@ interface Row {
 
 interface DeckSheetProps {
   deckName: string;
+  lang: string;
   onBack: (updatedRows: Row[]) => void;
 }
 
 const HEADERS = ['Word', 'Example 1', 'Example 2', 'Example 3'];
 const COLS = 4;
 
-export default function DeckSheet({ deckName, onBack }: DeckSheetProps) {
+// Must stay in sync with cell_hash() in generate_audio.py.
+function cellHash(language: string, text: string): string {
+  const bytes = new TextEncoder().encode(`${language}:${text}`);
+  let h = 2166136261;
+  for (const b of bytes) {
+    h ^= b;
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+
+  // Cell hover popup state
+  const [hoveredCell, setHoveredCell] = useState<string | null>(null);
+  const [translationCache, setTranslationCache] = useState<Record<string, string>>({});
+  const [translatingText, setTranslatingText] = useState<string | null>(null);
 
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const savedTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -29,7 +46,8 @@ export default function DeckSheet({ deckName, onBack }: DeckSheetProps) {
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
 
-  const cellRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  const cellRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     fetch(`/api/deck-data?deck=${encodeURIComponent(deckName)}`)
@@ -87,8 +105,67 @@ export default function DeckSheet({ deckName, onBack }: DeckSheetProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── TTS ──────────────────────────────────────────────────────────────────────
+
+  const speak = useCallback((text: string) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.pause();
+
+    const fallbackSrc = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
+    const hash = cellHash(lang, text);
+
+    fetch('/api/audio-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { url?: string } | null) => {
+        audio.src = data?.url ?? fallbackSrc;
+        audio.play().catch(() => {});
+      })
+      .catch(() => {
+        audio.src = fallbackSrc;
+        audio.play().catch(() => {});
+      });
+  }, [lang]);
+
+  // ── Translate ─────────────────────────────────────────────────────────────────
+
+  async function translateCell(text: string) {
+    if (translationCache[text] || translatingText === text) return;
+    setTranslatingText(text);
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, to: 'en' }),
+      });
+      const data = await res.json() as { translation?: string };
+      setTranslationCache(prev => ({ ...prev, [text]: data.translation ?? 'Translation failed' }));
+    } catch {
+      setTranslationCache(prev => ({ ...prev, [text]: 'Translation failed' }));
+    } finally {
+      setTranslatingText(null);
+    }
+  }
+
+  // ── Cell helpers ──────────────────────────────────────────────────────────────
+
+  function autoResize(el: HTMLTextAreaElement) {
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }
+
+  // Resize every cell synchronously after each render so wrapped content is
+  // always fully visible — covers both initial load and mid-edit wrapping.
+  useLayoutEffect(() => {
+    cellRefs.current.forEach(el => autoResize(el));
+  }, [rows]);
+
   function setRef(ri: number, ci: number) {
-    return (el: HTMLInputElement | null) => {
+    return (el: HTMLTextAreaElement | null) => {
       const key = `${ri}:${ci}`;
       if (el) cellRefs.current.set(key, el);
       else cellRefs.current.delete(key);
@@ -149,7 +226,7 @@ export default function DeckSheet({ deckName, onBack }: DeckSheetProps) {
     });
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>, ri: number, ci: number) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>, ri: number, ci: number) {
     if (e.key === 'Tab') {
       e.preventDefault();
       if (e.shiftKey) {
@@ -188,6 +265,8 @@ export default function DeckSheet({ deckName, onBack }: DeckSheetProps) {
 
   return (
     <div className="flex flex-col min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
+      <audio ref={audioRef} className="hidden" />
+
       <header className="sticky top-0 z-10 px-6 py-4 flex justify-between items-center border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
         <button
           onClick={() => onBack(cleanRows(rows))}
@@ -229,21 +308,58 @@ export default function DeckSheet({ deckName, onBack }: DeckSheetProps) {
           <tbody>
             {rows.map((row, ri) => (
               <tr key={ri} className="group border-b border-[var(--border-color)]">
-                <td className="border-r border-[var(--border-color)] py-1.5 text-xs text-[var(--text-muted)] text-center select-none">
+                <td className="border-r border-[var(--border-color)] py-2 text-xs text-[var(--text-muted)] text-center align-top select-none">
                   {ri + 1}
                 </td>
-                {[0, 1, 2, 3].map(ci => (
-                  <td key={ci} className="border-r border-[var(--border-color)] p-0">
-                    <input
-                      ref={setRef(ri, ci)}
-                      value={getCellValue(row, ci)}
-                      onChange={e => setCellValue(ri, ci, e.target.value)}
-                      onKeyDown={e => handleKeyDown(e, ri, ci)}
-                      placeholder={ci === 0 ? 'word' : `example ${ci}`}
-                      className={`w-full px-3 py-2 bg-transparent outline-none focus:bg-[var(--border-color)] ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
-                    />
-                  </td>
-                ))}
+                {[0, 1, 2, 3].map(ci => {
+                  const text = getCellValue(row, ci);
+                  const cellKey = `${ri}:${ci}`;
+                  return (
+                    <td
+                      key={ci}
+                      className="border-r border-[var(--border-color)] p-0 relative"
+                      onMouseEnter={() => setHoveredCell(cellKey)}
+                      onMouseLeave={() => setHoveredCell(null)}
+                    >
+                      <textarea
+                        ref={setRef(ri, ci)}
+                        value={text}
+                        rows={1}
+                        onChange={e => { setCellValue(ri, ci, e.target.value); autoResize(e.target); }}
+                        onKeyDown={e => handleKeyDown(e, ri, ci)}
+                        placeholder={ci === 0 ? 'word' : `example ${ci}`}
+                        className={`w-full px-3 py-2 bg-transparent outline-none focus:bg-[var(--border-color)] resize-none overflow-hidden leading-normal ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
+                      />
+                      {hoveredCell === cellKey && text && (
+                        <div className="absolute left-0 top-full z-30 bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-md" style={{ minWidth: '100%', width: 'max-content', maxWidth: '320px' }}>
+                          <div className="flex items-center gap-0.5 p-1">
+                            <button
+                              onMouseDown={e => { e.preventDefault(); speak(text); }}
+                              className="flex items-center gap-1.5 px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-color)] rounded transition-colors"
+                            >
+                              <Volume2 className="w-3.5 h-3.5" />
+                              <span>Listen</span>
+                            </button>
+                            <button
+                              onMouseDown={e => { e.preventDefault(); translateCell(text); }}
+                              className="flex items-center gap-1.5 px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-color)] rounded transition-colors"
+                            >
+                              {translatingText === text
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                : <Languages className="w-3.5 h-3.5" />}
+                              <span>Translate</span>
+                            </button>
+                          </div>
+                          {translationCache[text] && (
+                            <div className="px-3 py-2 text-xs text-[var(--text-secondary)] border-t border-[var(--border-color)] leading-relaxed">
+                              {translationCache[text]}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  );
+                })}
                 <td className="text-center">
                   <button
                     onClick={() => confirmDeleteRow(ri)}
