@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Brain, Settings } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Brain, Settings, Table2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LingoRecall from './LingoRecall';
 import DeckSheet from './DeckSheet';
@@ -687,7 +687,16 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col items-center justify-center p-8">
         <div className="w-full max-w-sm">
-          <p className="font-serif text-3xl font-normal text-center mb-2">{decks[selectedDeckIndex].name}</p>
+          <div className="relative flex items-center justify-center mb-2">
+            <p className="font-serif text-3xl font-normal text-center">{decks[selectedDeckIndex].name}</p>
+            <button
+              onClick={() => setShowEditor(true)}
+              title="Edit words"
+              className="absolute right-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              <Table2 className="w-5 h-5" />
+            </button>
+          </div>
           <div className="flex items-center justify-center gap-2 mb-4">
             <p className="text-[var(--text-muted)] text-center text-base mb-2">{data.length} words</p>
             <p className="text-[var(--text-muted)] text-center text-base mb-2">|</p>
@@ -731,20 +740,12 @@ export default function App() {
             <button onClick={changeDeck} className="text-base text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
               ← Decks
             </button>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setShowEditor(true)}
-                className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                Edit words
-              </button>
-              <button
-                onClick={() => { setEditLearnLimit(String(learnLimit)); setEditRecallLimit(String(recallLimit)); setShowDeckSettings(true); }}
-                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              onClick={() => { setEditLearnLimit(String(learnLimit)); setEditRecallLimit(String(recallLimit)); setShowDeckSettings(true); }}
+              className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
