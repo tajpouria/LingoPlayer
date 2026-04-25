@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2, Plus, Volume2, Languages, Wand2, Copy, Check, AlertCircle, Moon, Sun } from 'lucide-react';
+import { Loader2, Volume2, Languages, Wand2, Copy, Check, AlertCircle, Moon, Sun } from 'lucide-react';
 import { useDarkMode } from './DarkModeProvider';
 import { AnimatePresence, motion } from 'motion/react';
 
@@ -28,6 +28,12 @@ const COLS = 4;
 let _idSeq = 0;
 function mkRow(word = '', sentences = ['', '', '']): SRow {
   return { _id: `r${_idSeq++}`, word, sentences: [...sentences] };
+}
+
+function withTrailing(rows: SRow[]): SRow[] {
+  const last = rows[rows.length - 1];
+  const hasTrailing = last && !last.word.trim() && last.sentences.every(s => !s.trim());
+  return hasTrailing ? rows : [...rows, mkRow()];
 }
 
 // Must stay in sync with cell_hash() in generate_audio.py.
@@ -82,6 +88,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
 
   const cellRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const audioRef = useRef<HTMLAudioElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // ── Read live content from DOM ────────────────────────────────────────────────
   // This is the single source of truth for saves — not `rows` state.
@@ -153,7 +160,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
       if (raw) {
         const cached: Row[] = JSON.parse(raw);
         if (Array.isArray(cached) && cached.length > 0) {
-          const srows = cached.map(r => mkRow(r.word, r.sentences));
+          const srows = withTrailing(cached.map(r => mkRow(r.word, r.sentences)));
           setRows(srows);
           const cleaned = cleanRows(srows);
           setWordCount(cleaned.length);
@@ -169,7 +176,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
       .then((data: Row[]) => {
         if (cancelled) return;
         const serverRows = Array.isArray(data) && data.length > 0
-          ? data.map(r => mkRow(r.word, r.sentences))
+          ? withTrailing(data.map(r => mkRow(r.word, r.sentences)))
           : null;
         if (serverRows && !isDirtyRef.current) {
           suppressSaveRef.current = true;
@@ -209,8 +216,8 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   useEffect(() => {
     if (isFirstEffect.current) { isFirstEffect.current = false; return; }
     if (suppressSaveRef.current) { suppressSaveRef.current = false; return; }
-    // Structural change (add/delete) — content already flushed in the caller
-    scheduleSave(rowsRef.current);
+    // Read from DOM so uncontrolled textarea content is captured correctly
+    scheduleSave();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
@@ -390,10 +397,16 @@ Only include the words listed in the "missing" section above. Keep my existing e
     el.style.height = `${el.scrollHeight}px`;
   }
 
-  // Resize all cells once after initial data lands
+  // Resize all cells then scroll to the trailing row once initial data lands
   useEffect(() => {
     if (!loading) {
-      requestAnimationFrame(() => cellRefs.current.forEach(el => autoResize(el)));
+      requestAnimationFrame(() => {
+        cellRefs.current.forEach(el => autoResize(el));
+        // Second frame: scroll after heights are settled
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+        });
+      });
     }
   }, [loading]);
 
@@ -427,15 +440,27 @@ Only include the words listed in the "missing" section above. Keep my existing e
     setTimeout(() => focusCell(focusAt, 0), 0);
   }
 
-  function confirmDeleteRow(ri: number) { setDeleteTarget(ri); }
+  function confirmDeleteRow(ri: number) {
+    const domWord = cellRefs.current.get(`${ri}:0`)?.value ?? rows[ri]?.word ?? '';
+    const domSentences = [1, 2, 3].map(ci => cellRefs.current.get(`${ri}:${ci}`)?.value ?? '');
+    if (!domWord.trim() && domSentences.every(s => !s.trim())) {
+      // Empty row — skip the modal and delete immediately
+      const current = readRows();
+      const filtered = current.length === 1 ? [mkRow()] : current.filter((_, i) => i !== ri);
+      setRows(withTrailing(filtered));
+      setTimeout(() => focusCell(Math.max(0, ri - 1), 0), 0);
+    } else {
+      setDeleteTarget(ri);
+    }
+  }
 
   function executeDeleteRow() {
     if (deleteTarget === null) return;
     const ri = deleteTarget;
     setDeleteTarget(null);
     const current = readRows();
-    const next = current.length === 1 ? [mkRow()] : current.filter((_, i) => i !== ri);
-    setRows(next);
+    const filtered = current.length === 1 ? [mkRow()] : current.filter((_, i) => i !== ri);
+    setRows(withTrailing(filtered));
     setTimeout(() => focusCell(Math.max(0, ri - 1), 0), 0);
   }
 
@@ -518,7 +543,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
         </div>
       </header>
 
-      <div className="flex-1 overflow-auto pb-[50vh]">
+      <div ref={scrollRef} className="flex-1 overflow-auto pb-[50vh]">
         <table className="w-full border-collapse text-sm table-fixed">
           <colgroup>
             <col style={{ width: '2.5rem' }} />
@@ -560,7 +585,15 @@ Only include the words listed in the "missing" section above. Keep my existing e
                         ref={setRef(ri, ci)}
                         defaultValue={initialText}
                         rows={1}
-                        onChange={e => { autoResize(e.target); scheduleSave(); }}
+                        onChange={e => {
+                          autoResize(e.target);
+                          scheduleSave();
+                          // Auto-grow: append a trailing empty row the first time
+                          // the user types anything into the last (placeholder) row
+                          if (ri === rows.length - 1 && e.target.value.trim()) {
+                            setRows(prev => [...prev, mkRow()]);
+                          }
+                        }}
                         onKeyDown={e => handleKeyDown(e, ri, ci)}
                         placeholder={ci === 0 ? 'word' : `example ${ci}`}
                         className={`w-full px-3 py-2 bg-transparent outline-none focus:bg-[var(--border-color)] resize-none overflow-hidden leading-normal ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
@@ -602,25 +635,20 @@ Only include the words listed in the "missing" section above. Keep my existing e
                   );
                 })}
                 <td className="text-center align-top pt-2">
-                  <button
-                    onClick={() => confirmDeleteRow(ri)}
-                    className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all px-2 py-1 text-base leading-none"
-                  >
-                    ×
-                  </button>
+                  {ri < rows.length - 1 && (
+                    <button
+                      onClick={() => confirmDeleteRow(ri)}
+                      className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all px-2 py-1 text-base leading-none"
+                    >
+                      ×
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
 
-        <button
-          onClick={() => addRow()}
-          className="flex items-center gap-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors px-6 py-4"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add row
-        </button>
       </div>
 
       {/* ── Delete confirmation ─────────────────────────────────────────────── */}
