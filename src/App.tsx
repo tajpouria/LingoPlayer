@@ -225,8 +225,14 @@ export default function App() {
   // Player
   const [itemIndex, setItemIndex] = useState(-1); // -1 = word, 0+ = sentence
   const [isPlaying, setIsPlaying] = useState(false);
-  const [delay, setDelay] = useState(3);
+  const [delay, setDelay] = useState(() => {
+    if (typeof window === 'undefined') return 2;
+    const saved = parseFloat(localStorage.getItem('player_delay') ?? '');
+    return isNaN(saved) ? 2 : saved;
+  });
   const [lang, setLang] = useState('nl');
+
+  useEffect(() => { localStorage.setItem('player_delay', String(delay)); }, [delay]);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -995,28 +1001,16 @@ export default function App() {
       </main>
 
       {/* Settings row */}
-      <div className="px-8 py-2 flex justify-center gap-6 text-sm text-[var(--text-muted)]">
+      <div className="px-8 py-2 flex justify-center text-sm text-[var(--text-muted)]">
         <label className="flex items-center gap-2">
           <span>Delay</span>
           <input
-            type="range" min="1" max="10" step="1" value={delay}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDelay(parseInt(e.target.value))}
-            className="w-20 accent-[var(--text-primary)]"
+            type="range" min="0.5" max="3" step="0.5" value={delay}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDelay(parseFloat(e.target.value))}
+            className="w-24 accent-[var(--text-primary)]"
           />
           <span>{delay}s</span>
         </label>
-        <select
-          className="bg-transparent outline-none text-xs text-[var(--text-muted)]"
-          value={lang}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setLang(e.target.value)}
-        >
-          <option value="nl">nl</option>
-          <option value="en">en</option>
-          <option value="fr">fr</option>
-          <option value="de">de</option>
-          <option value="es">es</option>
-          <option value="it">it</option>
-        </select>
       </div>
 
       {/* Controls */}
