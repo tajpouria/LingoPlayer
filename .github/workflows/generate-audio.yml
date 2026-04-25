@@ -42,7 +42,7 @@ jobs:
           PIPER_VERSION="2023.11.14-2"
           curl -fsSL "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_x86_64.tar.gz" \
             | tar -xz -C /usr/local/bin --strip-components=1 piper/piper
-          piper --version
+          piper --help
 
       - name: Run generate_audio.py (scheduled)
         if: github.event_name == 'schedule'
