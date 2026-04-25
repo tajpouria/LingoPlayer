@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Loader2, Plus, Volume2, Languages, Wand2, Copy, Check, AlertCircle, Moon, Sun } from 'lucide-react';
 import { useDarkMode } from './DarkModeProvider';
 import { AnimatePresence, motion } from 'motion/react';
@@ -8,6 +8,12 @@ import { AnimatePresence, motion } from 'motion/react';
 interface Row {
   word: string;
   sentences: string[];
+}
+
+// Internal row with a stable identity so React never re-uses the wrong DOM node
+// after insert/delete. _id is stripped before sending to the server.
+interface SRow extends Row {
+  _id: string;
 }
 
 interface DeckSheetProps {
@@ -19,14 +25,16 @@ interface DeckSheetProps {
 const HEADERS = ['Word', 'Example 1', 'Example 2', 'Example 3'];
 const COLS = 4;
 
+let _idSeq = 0;
+function mkRow(word = '', sentences = ['', '', '']): SRow {
+  return { _id: `r${_idSeq++}`, word, sentences: [...sentences] };
+}
+
 // Must stay in sync with cell_hash() in generate_audio.py.
 function cellHash(language: string, text: string): string {
   const bytes = new TextEncoder().encode(`${language}:${text}`);
   let h = 2166136261;
-  for (const b of bytes) {
-    h ^= b;
-    h = Math.imul(h, 16777619) >>> 0;
-  }
+  for (const b of bytes) { h ^= b; h = Math.imul(h, 16777619) >>> 0; }
   return h.toString(16).padStart(8, '0');
 }
 
@@ -39,10 +47,16 @@ function cleanRows(r: Row[]): Row[] {
 export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   const { isDark, toggle: toggleDarkMode } = useDarkMode();
 
-  const [rows, setRows] = useState<Row[]>([]);
+  const localKey = `lp_sheet_${deckName}`;
+
+  // rows tracks STRUCTURE only (which rows exist, their IDs, and initial content).
+  // Typed content lives in the textarea DOM nodes — React never touches them while typing.
+  const [rows, setRows] = useState<SRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'offline' | 'error'>('synced');
+  const [showSaved, setShowSaved] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [wordCount, setWordCount] = useState(0);
 
   // Cell hover popup
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
@@ -51,73 +65,185 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
 
   // Generate-examples modal
   const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [computedPrompt, setComputedPrompt] = useState<string | null>(null);
+  const [hasMissingExamples, setHasMissingExamples] = useState(false);
   const [generatePaste, setGeneratePaste] = useState('');
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [promptCopied, setPromptCopied] = useState(false);
   const [applySuccess, setApplySuccess] = useState(false);
 
-  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const savedTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isFirstRender = useRef(true);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  const isDirtyRef = useRef(false);
+  const suppressSaveRef = useRef(false);
+  const isFirstEffect = useRef(true);
+  const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const cellRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // ── Read live content from DOM ────────────────────────────────────────────────
+  // This is the single source of truth for saves — not `rows` state.
+
+  function readRows(): SRow[] {
+    return rowsRef.current.map((row, ri) => ({
+      ...row,
+      word: cellRefs.current.get(`${ri}:0`)?.value ?? row.word,
+      sentences: [1, 2, 3].map(ci =>
+        cellRefs.current.get(`${ri}:${ci}`)?.value ?? row.sentences[ci - 1] ?? ''
+      ),
+    }));
+  }
+
+  // ── S3 sync ───────────────────────────────────────────────────────────────────
+
+  const syncToServer = useCallback(async (r: Row[]) => {
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+    if (!navigator.onLine) { setSyncStatus('offline'); return; }
+    try {
+      await fetch('/api/deck-data', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deck: deckName, rows: cleanRows(r) }),
+      });
+      isDirtyRef.current = false;
+      setSyncStatus('synced');
+    } catch {
+      setSyncStatus('error');
+      retryTimerRef.current = setTimeout(() => syncToServer(readRows()), 5000);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deckName]);
+
+  // Brief "Saved" flash
+  useEffect(() => {
+    if (syncStatus !== 'synced') return;
+    setShowSaved(true);
+    const t = setTimeout(() => setShowSaved(false), 2000);
+    return () => clearTimeout(t);
+  }, [syncStatus]);
+
+  // ── Debounced save (called from onChange and structural changes) ───────────────
+  // Does NOT call setRows — reads directly from the DOM.
+
+  function scheduleSave(immediate?: SRow[]) {
+    const current = immediate ?? readRows();
+    // Immediate localStorage write
+    try { localStorage.setItem(localKey, JSON.stringify(current)); } catch { /* quota */ }
+    isDirtyRef.current = true;
+    setSyncStatus('pending');
+    // Update word count and missing-examples flag cheaply
+    const cleaned = cleanRows(current);
+    setWordCount(cleaned.length);
+    setHasMissingExamples(cleaned.some(r => r.sentences.length < 3));
+    // Debounced S3 write
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => syncToServer(readRows()), 1500);
+  }
+
   // ── Data load ─────────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    let cancelled = false;
+
+    // Instant display from localStorage
+    try {
+      const raw = localStorage.getItem(localKey);
+      if (raw) {
+        const cached: Row[] = JSON.parse(raw);
+        if (Array.isArray(cached) && cached.length > 0) {
+          const srows = cached.map(r => mkRow(r.word, r.sentences));
+          setRows(srows);
+          const cleaned = cleanRows(srows);
+          setWordCount(cleaned.length);
+          setHasMissingExamples(cleaned.some(r => r.sentences.length < 3));
+          setLoading(false);
+        }
+      }
+    } catch { /* corrupt cache */ }
+
+    // Background server fetch
     fetch(`/api/deck-data?deck=${encodeURIComponent(deckName)}`)
       .then(r => r.json())
       .then((data: Row[]) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setRows(data.map(r => ({ word: r.word, sentences: [...r.sentences] })));
-        } else {
-          setRows([{ word: '', sentences: ['', '', ''] }]);
+        if (cancelled) return;
+        const serverRows = Array.isArray(data) && data.length > 0
+          ? data.map(r => mkRow(r.word, r.sentences))
+          : null;
+        if (serverRows && !isDirtyRef.current) {
+          suppressSaveRef.current = true;
+          setRows(serverRows);
+          const cleaned = cleanRows(serverRows);
+          setWordCount(cleaned.length);
+          setHasMissingExamples(cleaned.some(r => r.sentences.length < 3));
+          try { localStorage.setItem(localKey, JSON.stringify(serverRows)); } catch { /* quota */ }
+          // Push server content into already-mounted textareas
+          requestAnimationFrame(() => {
+            serverRows.forEach((row, ri) => {
+              const set = (ci: number, v: string) => {
+                const el = cellRefs.current.get(`${ri}:${ci}`);
+                if (el) { el.value = v; autoResize(el); }
+              };
+              set(0, row.word);
+              row.sentences.forEach((s, i) => set(i + 1, s));
+            });
+          });
+        } else if (!serverRows && !localStorage.getItem(localKey)) {
+          const empty = [mkRow()];
+          setRows(empty);
+          setWordCount(0);
+          setHasMissingExamples(false);
         }
       })
-      .catch(() => setRows([{ word: '', sentences: ['', '', ''] }]))
-      .finally(() => setLoading(false));
+      .catch(() => { /* keep local */ })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deckName]);
 
-  // ── Autosave ──────────────────────────────────────────────────────────────────
-
-  async function persist(r: Row[]) {
-    await fetch('/api/deck-data', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deck: deckName, rows: cleanRows(r) }),
-    });
-  }
+  // ── Skip the very first rows-change triggered by load ────────────────────────
+  // (we don't want to mark dirty on the initial data arrival)
 
   useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return; }
-    if (loading) return;
-    setSaveState('saving');
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(async () => {
-      try {
-        await persist(rowsRef.current);
-        setSaveState('saved');
-        if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-        savedTimerRef.current = setTimeout(() => setSaveState('idle'), 2000);
-      } catch {
-        setSaveState('idle');
-      }
-    }, 1000);
+    if (isFirstEffect.current) { isFirstEffect.current = false; return; }
+    if (suppressSaveRef.current) { suppressSaveRef.current = false; return; }
+    // Structural change (add/delete) — content already flushed in the caller
+    scheduleSave(rowsRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, loading]);
+  }, [rows]);
+
+  // ── Online / offline ──────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const onOnline  = () => { if (isDirtyRef.current) syncToServer(readRows()); else setSyncStatus('synced'); };
+    const onOffline = () => setSyncStatus('offline');
+    window.addEventListener('online',  onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online',  onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncToServer]);
+
+  // ── Flush on unmount ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        persist(rowsRef.current).catch(() => {});
+      if (syncTimerRef.current)  clearTimeout(syncTimerRef.current);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (isDirtyRef.current) {
+        fetch('/api/deck-data', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deck: deckName, rows: cleanRows(readRows()) }),
+        }).catch(() => {});
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [deckName]);
 
   // ── TTS ──────────────────────────────────────────────────────────────────────
 
@@ -125,24 +251,16 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
     const audio = audioRef.current;
     if (!audio) return;
     audio.pause();
-
     const fallbackSrc = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
     const hash = cellHash(lang, text);
-
     fetch('/api/audio-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hash }),
     })
       .then(r => r.ok ? r.json() : null)
-      .then((data: { url?: string } | null) => {
-        audio.src = data?.url ?? fallbackSrc;
-        audio.play().catch(() => {});
-      })
-      .catch(() => {
-        audio.src = fallbackSrc;
-        audio.play().catch(() => {});
-      });
+      .then((data: { url?: string } | null) => { audio.src = data?.url ?? fallbackSrc; audio.play().catch(() => {}); })
+      .catch(() => { audio.src = fallbackSrc; audio.play().catch(() => {}); });
   }, [lang]);
 
   // ── Translate ─────────────────────────────────────────────────────────────────
@@ -167,23 +285,15 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
 
   // ── Generate-examples prompt ──────────────────────────────────────────────────
 
-  const generatePrompt = useMemo(() => {
-    const cleaned = cleanRows(rows);
+  function buildPrompt(current: Row[]): string | null {
+    const cleaned = cleanRows(current);
     const missingRows = cleaned.filter(r => r.sentences.length < 3);
     if (missingRows.length === 0) return null;
-
-    // Up to 100 most-recently-added rows that have at least one example — used
-    // to show the AI the vocabulary level without repeating the missing ones.
     const contextRows = cleaned.filter(r => r.sentences.length === 3).slice(-100);
-
     const contextBlock = contextRows.length > 0
       ? contextRows.map(r => [r.word, ...r.sentences].join(',')).join('\n')
       : '(no complete rows yet)';
-
-    const missingBlock = missingRows
-      .map(r => [r.word, ...r.sentences].join(','))
-      .join('\n');
-
+    const missingBlock = missingRows.map(r => [r.word, ...r.sentences].join(',')).join('\n');
     return `Generate two more examples for each word that is missing examples on the same level to help learning the word, try to reuse the words from the list and introduce new words if needed, keep it on a same level as other words and sentences, use the most common examples that are used on a daily basis. Each must have three examples in total, keeping the examples I already provided in a spreadsheet format, only give for the rows that are missing. No headers for the output only values. Try to not introduce new or too complex words. Give me the answer here and in json.
 
 Here is my vocabulary list for context (${contextRows.length} words — use these to calibrate the difficulty and reuse vocabulary where natural):
@@ -199,9 +309,16 @@ Reply with a JSON array only (no other prose), like this:
 [{"word":"<word>","examples":["sentence 1","sentence 2","sentence 3"]},...]
 \`\`\`
 Only include the words listed in the "missing" section above. Keep my existing examples exactly as written. Only generate the ones needed to bring each word to 3 examples.`;
-  }, [rows]);
+  }
 
-  const hasMissingExamples = generatePrompt !== null;
+  function openGenerateModal() {
+    const prompt = buildPrompt(readRows());
+    setComputedPrompt(prompt);
+    setShowGenerateModal(true);
+  }
+
+  // Not a useMemo — only computed when modal opens (avoids per-keystroke work)
+  const generatePrompt = showGenerateModal ? computedPrompt : null;
 
   async function copyPrompt() {
     if (!generatePrompt) return;
@@ -218,26 +335,41 @@ Only include the words listed in the "missing" section above. Keep my existing e
       let jsonStr = generatePaste.trim();
       const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
       if (match) jsonStr = match[1].trim();
-
       const result = JSON.parse(jsonStr) as Array<{ word: string; examples: string[] }>;
       if (!Array.isArray(result)) throw new Error('Expected a JSON array.');
 
       let appliedCount = 0;
-      setRows(prev => prev.map(row => {
+      const newRows = rowsRef.current.map((row, ri) => {
+        const domWord = cellRefs.current.get(`${ri}:0`)?.value ?? row.word;
         const entry = result.find(r =>
-          typeof r.word === 'string' &&
-          r.word.trim().toLowerCase() === row.word.trim().toLowerCase()
+          typeof r.word === 'string' && r.word.trim().toLowerCase() === domWord.trim().toLowerCase()
         );
         if (!entry || !Array.isArray(entry.examples)) return row;
         const sentences = entry.examples.slice(0, 3).map(String);
         while (sentences.length < 3) sentences.push('');
         appliedCount++;
-        return { ...row, sentences };
-      }));
+        return { ...row, word: domWord, sentences };
+      });
 
-      if (appliedCount === 0) {
+      if (appliedCount === 0)
         throw new Error('No matching words found. Make sure the words in the JSON match your sheet exactly.');
-      }
+
+      // Update React structure
+      suppressSaveRef.current = true;
+      setRows(newRows);
+
+      // Push new sentence values directly into DOM (uncontrolled textareas won't update from defaultValue)
+      requestAnimationFrame(() => {
+        newRows.forEach((row, ri) => {
+          const set = (ci: number, v: string) => {
+            const el = cellRefs.current.get(`${ri}:${ci}`);
+            if (el) { el.value = v; autoResize(el); }
+          };
+          set(0, row.word);
+          row.sentences.forEach((s, i) => set(i + 1, s));
+        });
+        scheduleSave(newRows);
+      });
 
       setApplySuccess(true);
       setTimeout(() => {
@@ -258,9 +390,12 @@ Only include the words listed in the "missing" section above. Keep my existing e
     el.style.height = `${el.scrollHeight}px`;
   }
 
-  useLayoutEffect(() => {
-    cellRefs.current.forEach(el => autoResize(el));
-  }, [rows]);
+  // Resize all cells once after initial data lands
+  useEffect(() => {
+    if (!loading) {
+      requestAnimationFrame(() => cellRefs.current.forEach(el => autoResize(el)));
+    }
+  }, [loading]);
 
   function setRef(ri: number, ci: number) {
     return (el: HTMLTextAreaElement | null) => {
@@ -274,38 +409,22 @@ Only include the words listed in the "missing" section above. Keep my existing e
     setTimeout(() => cellRefs.current.get(`${ri}:${ci}`)?.focus(), 0);
   }
 
-  function getCellValue(row: Row, ci: number): string {
-    if (ci === 0) return row.word;
-    return row.sentences[ci - 1] ?? '';
-  }
-
-  function setCellValue(ri: number, ci: number, value: string) {
-    setRows(prev => prev.map((r, i) => {
-      if (i !== ri) return r;
-      if (ci === 0) return { ...r, word: value };
-      const sentences = [...r.sentences];
-      while (sentences.length < 3) sentences.push('');
-      sentences[ci - 1] = value;
-      return { ...r, sentences };
-    }));
-  }
-
   function addRow(afterIndex?: number) {
-    const newRow: Row = { word: '', sentences: ['', '', ''] };
+    // Flush current DOM content into rowsRef before splicing
+    const current = readRows();
+    const newRow = mkRow();
+    let next: SRow[];
+    let focusAt: number;
     if (afterIndex === undefined) {
-      setRows(prev => {
-        const next = [...prev, newRow];
-        setTimeout(() => focusCell(next.length - 1, 0), 0);
-        return next;
-      });
+      next = [...current, newRow];
+      focusAt = next.length - 1;
     } else {
-      setRows(prev => {
-        const next = [...prev];
-        next.splice(afterIndex + 1, 0, newRow);
-        setTimeout(() => focusCell(afterIndex + 1, 0), 0);
-        return next;
-      });
+      next = [...current];
+      next.splice(afterIndex + 1, 0, newRow);
+      focusAt = afterIndex + 1;
     }
+    setRows(next);
+    setTimeout(() => focusCell(focusAt, 0), 0);
   }
 
   function confirmDeleteRow(ri: number) { setDeleteTarget(ri); }
@@ -314,12 +433,10 @@ Only include the words listed in the "missing" section above. Keep my existing e
     if (deleteTarget === null) return;
     const ri = deleteTarget;
     setDeleteTarget(null);
-    setRows(prev => {
-      if (prev.length === 1) return [{ word: '', sentences: ['', '', ''] }];
-      const next = prev.filter((_, i) => i !== ri);
-      setTimeout(() => focusCell(Math.max(0, ri - 1), 0), 0);
-      return next;
-    });
+    const current = readRows();
+    const next = current.length === 1 ? [mkRow()] : current.filter((_, i) => i !== ri);
+    setRows(next);
+    setTimeout(() => focusCell(Math.max(0, ri - 1), 0), 0);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>, ri: number, ci: number) {
@@ -329,12 +446,9 @@ Only include the words listed in the "missing" section above. Keep my existing e
         if (ci > 0) focusCell(ri, ci - 1);
         else if (ri > 0) focusCell(ri - 1, COLS - 1);
       } else {
-        if (ci < COLS - 1) {
-          focusCell(ri, ci + 1);
-        } else {
-          if (ri === rows.length - 1) addRow(ri);
-          else focusCell(ri + 1, 0);
-        }
+        if (ci < COLS - 1) focusCell(ri, ci + 1);
+        else if (ri === rows.length - 1) addRow(ri);
+        else focusCell(ri + 1, 0);
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -357,15 +471,24 @@ Only include the words listed in the "missing" section above. Keep my existing e
     );
   }
 
-  const wordCount = cleanRows(rows).length;
-
   return (
     <div className="flex flex-col min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
       <audio ref={audioRef} className="hidden" />
 
       <header className="sticky top-0 z-10 px-6 py-4 flex justify-between items-center border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
         <button
-          onClick={() => onBack(cleanRows(rows))}
+          onClick={() => {
+            if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+            const current = readRows();
+            if (isDirtyRef.current) {
+              fetch('/api/deck-data', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deck: deckName, rows: cleanRows(current) }),
+              }).catch(() => {});
+            }
+            onBack(cleanRows(current));
+          }}
           className="text-base text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
         >
           ← Back
@@ -380,7 +503,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
           </button>
           {hasMissingExamples && (
             <button
-              onClick={() => setShowGenerateModal(true)}
+              onClick={openGenerateModal}
               className="flex items-center gap-1.5 hover:text-[var(--text-primary)] transition-colors"
             >
               <Wand2 className="w-3.5 h-3.5" />
@@ -388,8 +511,10 @@ Only include the words listed in the "missing" section above. Keep my existing e
             </button>
           )}
           <span>{wordCount} word{wordCount !== 1 ? 's' : ''}</span>
-          {saveState === 'saving' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          {saveState === 'saved' && <span>· Saved</span>}
+          {syncStatus === 'pending'            && <Loader2 className="w-3 h-3 animate-spin opacity-40" />}
+          {syncStatus === 'offline'            && <span className="text-xs opacity-60">Offline</span>}
+          {syncStatus === 'error'              && <span className="text-xs opacity-60">Sync error</span>}
+          {syncStatus === 'synced' && showSaved && <span className="text-xs">· Saved</span>}
         </div>
       </header>
 
@@ -407,10 +532,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
             <tr className="border-b border-[var(--border-color)]">
               <th className="border-r border-[var(--border-color)] py-2" />
               {HEADERS.map((h, ci) => (
-                <th
-                  key={ci}
-                  className="border-r border-[var(--border-color)] px-3 py-2 text-left text-xs font-medium text-[var(--text-muted)] tracking-wide uppercase"
-                >
+                <th key={ci} className="border-r border-[var(--border-color)] px-3 py-2 text-left text-xs font-medium text-[var(--text-muted)] tracking-wide uppercase">
                   {h}
                 </th>
               ))}
@@ -419,12 +541,12 @@ Only include the words listed in the "missing" section above. Keep my existing e
           </thead>
           <tbody>
             {rows.map((row, ri) => (
-              <tr key={ri} className="group border-b border-[var(--border-color)]">
+              <tr key={row._id} className="group border-b border-[var(--border-color)]">
                 <td className="border-r border-[var(--border-color)] py-2 text-xs text-[var(--text-muted)] text-center align-top select-none">
                   {ri + 1}
                 </td>
                 {[0, 1, 2, 3].map(ci => {
-                  const text = getCellValue(row, ci);
+                  const initialText = ci === 0 ? row.word : (row.sentences[ci - 1] ?? '');
                   const cellKey = `${ri}:${ci}`;
                   return (
                     <td
@@ -433,46 +555,47 @@ Only include the words listed in the "missing" section above. Keep my existing e
                       onMouseEnter={() => setHoveredCell(cellKey)}
                       onMouseLeave={() => setHoveredCell(null)}
                     >
+                      {/* Uncontrolled — React never re-renders this textarea on typing */}
                       <textarea
                         ref={setRef(ri, ci)}
-                        value={text}
+                        defaultValue={initialText}
                         rows={1}
-                        onChange={e => { setCellValue(ri, ci, e.target.value); autoResize(e.target); }}
+                        onChange={e => { autoResize(e.target); scheduleSave(); }}
                         onKeyDown={e => handleKeyDown(e, ri, ci)}
                         placeholder={ci === 0 ? 'word' : `example ${ci}`}
                         className={`w-full px-3 py-2 bg-transparent outline-none focus:bg-[var(--border-color)] resize-none overflow-hidden leading-normal ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
                       />
-                      {/* Icons float inside the cell on the right — never block the row below */}
-                      {hoveredCell === cellKey && text && (
+                      {/* Icons inside cell — never block the row below */}
+                      {hoveredCell === cellKey && initialText && (
                         <div
                           className="absolute right-0 top-0 bottom-0 flex items-center gap-0.5 pr-1 pointer-events-none z-10"
                           style={{ background: 'linear-gradient(to right, transparent, var(--bg-primary) 35%)' }}
                         >
                           <button
-                            onMouseDown={e => { e.preventDefault(); speak(text); }}
+                            onMouseDown={e => { e.preventDefault(); speak(cellRefs.current.get(cellKey)?.value ?? initialText); }}
                             className="pointer-events-auto p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                             title="Listen"
                           >
                             <Volume2 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onMouseDown={e => { e.preventDefault(); translateCell(text); }}
+                            onMouseDown={e => { e.preventDefault(); translateCell(cellRefs.current.get(cellKey)?.value ?? initialText); }}
                             className="pointer-events-auto p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                             title="Translate"
                           >
-                            {translatingText === text
+                            {translatingText === (cellRefs.current.get(cellKey)?.value ?? initialText)
                               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               : <Languages className="w-3.5 h-3.5" />}
                           </button>
                         </div>
                       )}
-                      {/* Translation result — only appears after Translate is clicked */}
-                      {hoveredCell === cellKey && translationCache[text] && (
+                      {/* Translation result — only after Translate is clicked */}
+                      {hoveredCell === cellKey && translationCache[cellRefs.current.get(cellKey)?.value ?? initialText] && (
                         <div
                           className="absolute left-0 top-full z-30 bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-md px-3 py-2 text-xs text-[var(--text-secondary)] leading-relaxed"
                           style={{ minWidth: '100%', width: 'max-content', maxWidth: '320px' }}
                         >
-                          {translationCache[text]}
+                          {translationCache[cellRefs.current.get(cellKey)?.value ?? initialText]}
                         </div>
                       )}
                     </td>
@@ -504,17 +627,13 @@ Only include the words listed in the "missing" section above. Keep my existing e
       <AnimatePresence>
         {deleteTarget !== null && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="fixed inset-0 bg-black/40 flex items-center justify-center p-8 z-50"
             onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null); }}
           >
             <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.15 }}
               className="w-full max-w-xs bg-[var(--bg-primary)] border border-[var(--border-color)] p-6"
             >
@@ -524,18 +643,8 @@ Only include the words listed in the "missing" section above. Keep my existing e
                 : <p className="text-sm text-[var(--text-muted)] mb-6">This row is empty.</p>
               }
               <div className="flex gap-3">
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  className="flex-1 py-2 text-sm border border-[var(--border-color)] hover:border-[var(--text-primary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={executeDeleteRow}
-                  className="flex-1 py-2 text-sm border border-[var(--border-color)] hover:border-[var(--text-primary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  Delete
-                </button>
+                <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2 text-sm border border-[var(--border-color)] hover:border-[var(--text-primary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">Cancel</button>
+                <button onClick={executeDeleteRow}           className="flex-1 py-2 text-sm border border-[var(--border-color)] hover:border-[var(--text-primary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">Delete</button>
               </div>
             </motion.div>
           </motion.div>
@@ -544,81 +653,63 @@ Only include the words listed in the "missing" section above. Keep my existing e
 
       {/* ── Generate examples modal ─────────────────────────────────────────── */}
       <AnimatePresence>
-        {showGenerateModal && generatePrompt && (
+        {showGenerateModal && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
             onClick={e => { if (e.target === e.currentTarget) setShowGenerateModal(false); }}
           >
             <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.15 }}
               className="w-full max-w-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex flex-col max-h-[90vh]"
             >
-              {/* Modal header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-color)] shrink-0">
                 <p className="text-sm font-medium">Generate examples</p>
-                <button
-                  onClick={() => setShowGenerateModal(false)}
-                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-lg leading-none"
-                >
-                  ×
-                </button>
+                <button onClick={() => setShowGenerateModal(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-lg leading-none">×</button>
               </div>
 
               <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
-
-                {/* Prompt section */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest">AI Prompt</p>
-                    <button
-                      onClick={copyPrompt}
-                      className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                    >
-                      {promptCopied
-                        ? <><Check className="w-3.5 h-3.5" /> Copied</>
-                        : <><Copy className="w-3.5 h-3.5" /> Copy</>}
-                    </button>
-                  </div>
-                  <pre className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap font-mono leading-relaxed max-h-64 overflow-auto border-l-2 border-[var(--border-color)] pl-4">
-                    {generatePrompt}
-                  </pre>
-                </div>
-
-                {/* Paste section */}
-                <div className="border-t border-[var(--border-color)] pt-5 space-y-3">
-                  <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest">Paste AI response</p>
-                  <textarea
-                    value={generatePaste}
-                    onChange={e => { setGeneratePaste(e.target.value); setGenerateError(null); }}
-                    placeholder="Paste the JSON array here…"
-                    className="w-full bg-transparent border border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none p-3 text-sm font-mono min-h-[140px] resize-none transition-colors placeholder:text-[var(--text-muted)]"
-                  />
-
-                  {generateError && (
-                    <div className="flex items-start gap-2 text-sm text-[var(--text-muted)]">
-                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                      <span>{generateError}</span>
+                {generatePrompt ? (
+                  <>
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest">AI Prompt</p>
+                        <button onClick={copyPrompt} className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+                          {promptCopied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                        </button>
+                      </div>
+                      <pre className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap font-mono leading-relaxed max-h-64 overflow-auto border-l-2 border-[var(--border-color)] pl-4">
+                        {generatePrompt}
+                      </pre>
                     </div>
-                  )}
-
-                  <button
-                    onClick={applyGenerated}
-                    disabled={!generatePaste.trim() || applySuccess}
-                    className="text-sm underline text-[var(--text-primary)] disabled:opacity-30 flex items-center gap-1.5 transition-opacity"
-                  >
-                    {applySuccess
-                      ? <><Check className="w-4 h-4" /> Applied</>
-                      : 'Apply to sheet'}
-                  </button>
-                </div>
-
+                    <div className="border-t border-[var(--border-color)] pt-5 space-y-3">
+                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest">Paste AI response</p>
+                      <textarea
+                        value={generatePaste}
+                        onChange={e => { setGeneratePaste(e.target.value); setGenerateError(null); }}
+                        placeholder="Paste the JSON array here…"
+                        className="w-full bg-transparent border border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none p-3 text-sm font-mono min-h-[140px] resize-none transition-colors placeholder:text-[var(--text-muted)]"
+                      />
+                      {generateError && (
+                        <div className="flex items-start gap-2 text-sm text-[var(--text-muted)]">
+                          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                          <span>{generateError}</span>
+                        </div>
+                      )}
+                      <button
+                        onClick={applyGenerated}
+                        disabled={!generatePaste.trim() || applySuccess}
+                        className="text-sm underline text-[var(--text-primary)] disabled:opacity-30 flex items-center gap-1.5 transition-opacity"
+                      >
+                        {applySuccess ? <><Check className="w-4 h-4" /> Applied</> : 'Apply to sheet'}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)]">All rows already have 3 examples.</p>
+                )}
               </div>
             </motion.div>
           </motion.div>
