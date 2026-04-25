@@ -22,6 +22,7 @@ interface Row {
 
 interface Deck {
   name: string;
+  lang: string;
   dailyLearnLimit?: number;
   dailyRecallLimit?: number;
 }
@@ -46,6 +47,19 @@ type SessionMode = 'learn' | 'review' | 'recall';
 const BOX_INTERVALS = [0, 1, 3, 7, 14, 30];
 const DEFAULT_DAILY_LEARN_LIMIT = 25;
 const DEFAULT_DAILY_RECALL_LIMIT = 10;
+
+const LANGUAGES = [
+  { code: 'nl', name: 'Dutch' },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'it', name: 'Italian' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'zh', name: 'Chinese' },
+];
 
 // ── SRS helpers ───────────────────────────────────────────────────────────────
 
@@ -154,6 +168,7 @@ export default function App() {
   const [decks, setDecks] = useState<Deck[]>([]);
   const [decksLoading, setDecksLoading] = useState(true);
   const [newDeckName, setNewDeckName] = useState('');
+  const [newDeckLang, setNewDeckLang] = useState('');
   const [showAddDeck, setShowAddDeck] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
   const [showDeleteDeck, setShowDeleteDeck] = useState(false);
@@ -169,11 +184,12 @@ export default function App() {
 
   async function addDeck() {
     const name = newDeckName.trim();
-    if (!name) return;
-    const res = await fetch('/api/decks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    if (!name || !newDeckLang) return;
+    const res = await fetch('/api/decks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, lang: newDeckLang }) });
     const updated = await res.json();
     if (Array.isArray(updated)) setDecks(updated);
     setNewDeckName('');
+    setNewDeckLang('');
     setShowAddDeck(false);
   }
 
@@ -265,6 +281,7 @@ export default function App() {
       .then(([rows, remoteSRS]) => {
         const validRows = Array.isArray(rows) ? rows : [];
         setData(validRows);
+        if (decks[selectedDeckIndex!]?.lang) setLang(decks[selectedDeckIndex!].lang);
 
         const localSRS = loadSRS(deckName);
         const merged = mergeSRS(localSRS, remoteSRS);
@@ -548,9 +565,10 @@ export default function App() {
                     <div key={index} className="border border-[var(--border-color)] hover:border-[var(--text-primary)] transition-colors px-4">
                       <button
                         onClick={() => setSelectedDeckIndex(index)}
-                        className="w-full text-left py-3"
+                        className="w-full text-left py-3 flex items-center justify-between"
                       >
                         <span className="font-medium text-lg">{deck.name}</span>
+                        {deck.lang && <span className="text-xs text-[var(--text-muted)] font-mono">{deck.lang}</span>}
                       </button>
                     </div>
                   );
@@ -570,7 +588,7 @@ export default function App() {
 
               <div className="pt-6">
                 {showAddDeck ? (
-                  <div className="space-y-2">
+                  <div className="space-y-4">
                     <input
                       type="text"
                       placeholder="Deck name"
@@ -580,16 +598,31 @@ export default function App() {
                       autoFocus
                       className="w-full py-2 bg-transparent border-b border-[var(--border-color)] focus:border-[var(--text-primary)] outline-none text-sm transition-colors placeholder:text-[var(--text-muted)]"
                     />
-                    <div className="flex gap-4 mt-2">
+                    <div>
+                      <p className="text-xs text-[var(--text-muted)] mb-2">Language</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {LANGUAGES.map(l => (
+                          <button
+                            key={l.code}
+                            type="button"
+                            onClick={() => setNewDeckLang(l.code)}
+                            className={`px-2.5 py-1 text-xs border transition-colors ${newDeckLang === l.code ? 'border-[var(--text-primary)] text-[var(--text-primary)]' : 'border-[var(--border-color)] text-[var(--text-muted)] hover:border-[var(--text-primary)] hover:text-[var(--text-primary)]'}`}
+                          >
+                            {l.code} · {l.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
                       <button
-                        onClick={() => { setShowAddDeck(false); setNewDeckName(''); }}
+                        onClick={() => { setShowAddDeck(false); setNewDeckName(''); setNewDeckLang(''); }}
                         className="flex-1 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-center"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={addDeck}
-                        disabled={!newDeckName.trim()}
+                        disabled={!newDeckName.trim() || !newDeckLang}
                         className="flex-1 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-30 transition-colors text-center"
                       >
                         Add
