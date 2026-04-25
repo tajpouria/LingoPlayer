@@ -44,6 +44,13 @@ jobs:
             | tar -xz -C /usr/local/bin --strip-components=1 piper/piper
           piper --help
 
+      - name: Restore voice model cache
+        uses: actions/cache@v4
+        with:
+          path: .models
+          key: piper-models-${{ hashFiles('generate_audio.py') }}
+          restore-keys: piper-models-
+
       - name: Run generate_audio.py (scheduled)
         if: github.event_name == 'schedule'
         env:
@@ -73,9 +80,9 @@ jobs:
           echo "Running: python generate_audio.py $ARGS"
           python generate_audio.py $ARGS
 
-      - name: Cache downloaded voice models
-        uses: actions/cache@v4
+      - name: Save voice model cache
+        uses: actions/cache/save@v4
+        if: always()
         with:
           path: .models
           key: piper-models-${{ hashFiles('generate_audio.py') }}
-          restore-keys: piper-models-
