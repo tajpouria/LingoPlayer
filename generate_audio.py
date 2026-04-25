@@ -214,6 +214,16 @@ def parse_deck_csv(text: str) -> list[tuple[str, list[str]]]:
 
 _warned_langs: set[str] = set()
 _warned_langs_lock = threading.Lock()
+# Per-language download locks: threads that need a model block here until
+# the download completes, instead of racing and returning None immediately.
+_download_locks: dict[str, threading.Lock] = {}
+_download_locks_lock = threading.Lock()
+
+def _get_download_lock(lang: str) -> threading.Lock:
+    with _download_locks_lock:
+        if lang not in _download_locks:
+            _download_locks[lang] = threading.Lock()
+        return _download_locks[lang]
 
 def _download_model(stem: str) -> bool:
     """Download a piper voice model into MODELS_DIR. Returns True on success."""
@@ -248,18 +258,17 @@ def _model_path(lang: str) -> Path | None:
         return None
 
     p = MODELS_DIR / f"{stem}.onnx"
-    if not p.exists():
-        # Only one thread should attempt the download for a given lang.
-        do_download = False
-        with _warned_langs_lock:
-            if lang not in _warned_langs:
-                _warned_langs.add(lang)
-                do_download = True
-        if do_download:
-            if not _download_model(stem):
-                return None
+    if p.exists():
+        return p
 
-    return p if p.exists() else None
+    # Serialize downloads per language: all threads wait on the same lock so
+    # only one downloads while the rest block and then reuse the result.
+    with _get_download_lock(lang):
+        if p.exists():
+            return p
+        if not _download_model(stem):
+            return None
+        return p if p.exists() else None
 
 def synthesize(text: str, lang: str) -> bytes | None:
     """Synthesize text with piper and return WAV bytes, or None on error."""
