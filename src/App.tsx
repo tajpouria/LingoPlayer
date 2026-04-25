@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Brain, Settings, Table2 } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, Loader2, Brain, Settings, Table2, Moon, Sun } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LingoRecall from './LingoRecall';
 import DeckSheet from './DeckSheet';
@@ -634,6 +634,13 @@ export default function App() {
   if (selectedDeckIndex === null) {
     return (
       <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col items-center justify-center p-8">
+        <button
+          onClick={toggleDarkMode}
+          className="fixed top-4 right-6 z-40 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          title={isDark ? 'Light mode' : 'Dark mode'}
+        >
+          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
         <div className="w-full max-w-sm">
           <p className="font-serif text-4xl font-normal text-center mb-2">LingoPlayer</p>
           <p className="text-[var(--text-muted)] text-center text-base mb-10">Select a deck</p>
@@ -776,6 +783,13 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col items-center justify-center p-8">
+        <button
+          onClick={toggleDarkMode}
+          className="fixed top-4 right-6 z-40 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          title={isDark ? 'Light mode' : 'Dark mode'}
+        >
+          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
         <div className="w-full max-w-sm">
           <div className="relative flex items-center justify-center mb-2">
             <p className="font-serif text-3xl font-normal text-center">{decks[selectedDeckIndex].name}</p>
@@ -1008,6 +1022,13 @@ export default function App() {
   if (isSessionComplete) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] p-8">
+        <button
+          onClick={toggleDarkMode}
+          className="fixed top-4 right-6 z-40 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          title={isDark ? 'Light mode' : 'Dark mode'}
+        >
+          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
         <div className="max-w-sm w-full text-center">
           <p className="font-serif text-3xl font-normal mb-2">Done</p>
           <p className="text-[var(--text-muted)] text-sm mb-10">
@@ -1047,6 +1068,13 @@ export default function App() {
         <span className="text-base">{sessionIndex + 1} / {sessionWords.length}</span>
         <div className="flex items-center gap-4">
           <span className="text-base">{boxLabel}</span>
+          <button
+            onClick={toggleDarkMode}
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            title={isDark ? 'Light mode' : 'Dark mode'}
+          >
+            {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
           <button onClick={endSession} className="text-base hover:text-[var(--text-primary)] transition-colors">End</button>
         </div>
       </header>

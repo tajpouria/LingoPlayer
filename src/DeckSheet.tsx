@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2, Plus, Volume2, Languages, Wand2, Copy, Check, AlertCircle } from 'lucide-react';
+import { Loader2, Plus, Volume2, Languages, Wand2, Copy, Check, AlertCircle, Moon, Sun } from 'lucide-react';
+import { useDarkMode } from './DarkModeProvider';
 import { AnimatePresence, motion } from 'motion/react';
 
 interface Row {
@@ -36,6 +37,8 @@ function cleanRows(r: Row[]): Row[] {
 }
 
 export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
+  const { isDark, toggle: toggleDarkMode } = useDarkMode();
+
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -368,6 +371,13 @@ Only include the words listed in the "missing" section above. Keep my existing e
           ← Back
         </button>
         <div className="flex items-center gap-4 text-sm text-[var(--text-muted)]">
+          <button
+            onClick={toggleDarkMode}
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            title={isDark ? 'Light mode' : 'Dark mode'}
+          >
+            {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
           {hasMissingExamples && (
             <button
               onClick={() => setShowGenerateModal(true)}
@@ -383,7 +393,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
         </div>
       </header>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto pb-[50vh]">
         <table className="w-full border-collapse text-sm table-fixed">
           <colgroup>
             <col style={{ width: '2.5rem' }} />
@@ -419,7 +429,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
                   return (
                     <td
                       key={ci}
-                      className="border-r border-[var(--border-color)] p-0 relative"
+                      className={`border-r border-[var(--border-color)] p-0 relative transition-shadow ${hoveredCell === cellKey ? 'ring-1 ring-inset ring-[var(--text-muted)]' : ''}`}
                       onMouseEnter={() => setHoveredCell(cellKey)}
                       onMouseLeave={() => setHoveredCell(null)}
                     >
@@ -432,31 +442,37 @@ Only include the words listed in the "missing" section above. Keep my existing e
                         placeholder={ci === 0 ? 'word' : `example ${ci}`}
                         className={`w-full px-3 py-2 bg-transparent outline-none focus:bg-[var(--border-color)] resize-none overflow-hidden leading-normal ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
                       />
+                      {/* Icons float inside the cell on the right — never block the row below */}
                       {hoveredCell === cellKey && text && (
-                        <div className="absolute left-0 top-full z-30 bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-md" style={{ minWidth: '100%', width: 'max-content', maxWidth: '320px' }}>
-                          <div className="flex items-center gap-0.5 p-1">
-                            <button
-                              onMouseDown={e => { e.preventDefault(); speak(text); }}
-                              className="flex items-center gap-1.5 px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-color)] rounded transition-colors"
-                            >
-                              <Volume2 className="w-3.5 h-3.5" />
-                              <span>Listen</span>
-                            </button>
-                            <button
-                              onMouseDown={e => { e.preventDefault(); translateCell(text); }}
-                              className="flex items-center gap-1.5 px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-color)] rounded transition-colors"
-                            >
-                              {translatingText === text
-                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                : <Languages className="w-3.5 h-3.5" />}
-                              <span>Translate</span>
-                            </button>
-                          </div>
-                          {translationCache[text] && (
-                            <div className="px-3 py-2 text-xs text-[var(--text-secondary)] border-t border-[var(--border-color)] leading-relaxed">
-                              {translationCache[text]}
-                            </div>
-                          )}
+                        <div
+                          className="absolute right-0 top-0 bottom-0 flex items-center gap-0.5 pr-1 pointer-events-none z-10"
+                          style={{ background: 'linear-gradient(to right, transparent, var(--bg-primary) 35%)' }}
+                        >
+                          <button
+                            onMouseDown={e => { e.preventDefault(); speak(text); }}
+                            className="pointer-events-auto p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                            title="Listen"
+                          >
+                            <Volume2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onMouseDown={e => { e.preventDefault(); translateCell(text); }}
+                            className="pointer-events-auto p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                            title="Translate"
+                          >
+                            {translatingText === text
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <Languages className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      )}
+                      {/* Translation result — only appears after Translate is clicked */}
+                      {hoveredCell === cellKey && translationCache[text] && (
+                        <div
+                          className="absolute left-0 top-full z-30 bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-md px-3 py-2 text-xs text-[var(--text-secondary)] leading-relaxed"
+                          style={{ minWidth: '100%', width: 'max-content', maxWidth: '320px' }}
+                        >
+                          {translationCache[text]}
                         </div>
                       )}
                     </td>
