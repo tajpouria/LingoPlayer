@@ -13,6 +13,20 @@ import DeckSheet from './DeckSheet';
 import ActivityHeatmap from './ActivityHeatmap';
 import { useDarkMode } from './DarkModeProvider';
 
+// ── FNV-1a hash — must stay in sync with cell_hash() in generate_audio.py ────
+
+function cellHash(language: string, text: string): string {
+  const bytes = new TextEncoder().encode(`${language}:${text}`);
+  let h = 2166136261;
+  for (const b of bytes) {
+    h ^= b;
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+const PRELOAD_AHEAD = 3; // words ahead of current position to pre-fetch
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface Row {
@@ -332,16 +346,10 @@ export default function App() {
 
   // ── TTS ─────────────────────────────────────────────────────────────────────
 
-  // Must stay in sync with the Python cell_hash() in generate_audio.py.
-  function cellHash(language: string, text: string): string {
-    const bytes = new TextEncoder().encode(`${language}:${text}`);
-    let h = 2166136261;
-    for (const b of bytes) {
-      h ^= b;
-      h = Math.imul(h, 16777619) >>> 0;
-    }
-    return h.toString(16).padStart(8, '0');
-  }
+  // hash → signed S3 URL, populated by preloadAhead and primed on cache-miss plays
+  const audioCacheRef = useRef<Map<string, string>>(new Map());
+  // hashes currently being fetched — prevents duplicate in-flight requests
+  const audioFetchingRef = useRef<Set<string>>(new Set());
 
   const speak = useCallback((text: string, onEnd?: () => void) => {
     const audio = audioRef.current;
@@ -360,15 +368,64 @@ export default function App() {
     };
 
     const hash = cellHash(lang, text);
+
+    // Cache hit — play immediately with no network round-trip
+    const cached = audioCacheRef.current.get(hash);
+    if (cached) {
+      play(cached);
+      return;
+    }
+
+    // Cache miss — fetch, prime cache on success, then play
     fetch('/api/audio-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hash }),
     })
       .then(r => r.ok ? r.json() : null)
-      .then((data: { url?: string } | null) => play(data?.url ?? fallbackSrc))
+      .then((data: { url?: string } | null) => {
+        if (data?.url) audioCacheRef.current.set(hash, data.url);
+        play(data?.url ?? fallbackSrc);
+      })
       .catch(() => play(fallbackSrc));
   }, [lang]);
+
+  // ── Audio preloading ──────────────────────────────────────────────────────────
+
+  const preloadAhead = useCallback((startIndex: number, words: Row[]) => {
+    const end = Math.min(startIndex + PRELOAD_AHEAD, words.length);
+    for (let i = startIndex; i < end; i++) {
+      const word = words[i];
+      const texts = [word.word, ...word.sentences].filter(Boolean);
+      for (const text of texts) {
+        const hash = cellHash(lang, text);
+        if (audioCacheRef.current.has(hash) || audioFetchingRef.current.has(hash)) continue;
+        audioFetchingRef.current.add(hash);
+        fetch('/api/audio-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hash }),
+        })
+          .then(r => r.ok ? r.json() : null)
+          .then((data: { url?: string } | null) => {
+            if (data?.url) audioCacheRef.current.set(hash, data.url);
+          })
+          .catch(() => {})
+          .finally(() => audioFetchingRef.current.delete(hash));
+      }
+    }
+  }, [lang]);
+
+  // Clear cache when a new session starts (sessionWords replaced)
+  useEffect(() => {
+    audioCacheRef.current.clear();
+    audioFetchingRef.current.clear();
+  }, [sessionWords]);
+
+  // Preload the next PRELOAD_AHEAD words whenever the position advances
+  useEffect(() => {
+    if (sessionWords.length > 0) preloadAhead(sessionIndex, sessionWords);
+  }, [sessionIndex, sessionWords, preloadAhead]);
 
   // ── Promote current word then advance ────────────────────────────────────────
 
