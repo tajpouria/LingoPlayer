@@ -341,22 +341,22 @@ def check_setup() -> None:
 
 # ── Per-user processing ───────────────────────────────────────────────────────
 
-def process_user(user_prefix: str, dry_run: bool, workers: int = 1) -> None:
+def process_user(user_prefix: str, dry_run: bool, workers: int = 1) -> int:
     folder = user_prefix.rstrip("/").split("/")[-1]
     print(f"\n── {folder}")
 
     raw_decks = s3_read(f"{user_prefix}decks.json")
     if raw_decks is None:
         print("   no decks.json – skipping")
-        return
+        return 0
     try:
         decks = json.loads(raw_decks)
     except json.JSONDecodeError:
         print("   malformed decks.json – skipping")
-        return
+        return 0
     if not isinstance(decks, list) or not decks:
         print("   no decks")
-        return
+        return 0
 
     manifest_key = f"{user_prefix}{MANIFEST_FILE}"
     manifest_raw = s3_read(manifest_key)
@@ -410,7 +410,7 @@ def process_user(user_prefix: str, dry_run: bool, workers: int = 1) -> None:
 
     # ── synthesize (parallel) or dry-run ─────────────────────────────────────
     if dry_run:
-        for dname, h, _text, _lang, _audio_key in pending:
+        for dname, h, *_ in pending:
             manifest[h] = True
             manifest_dirty = True
             deck_stats[dname]["new"] += 1
@@ -456,6 +456,8 @@ def process_user(user_prefix: str, dry_run: bool, workers: int = 1) -> None:
         else:
             s3_write_json(manifest_key, manifest)
             print(f"   manifest saved  ({len(manifest)} total entries)")
+
+    return sum(s["failed"] for s in deck_stats.values())
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -510,20 +512,22 @@ def main() -> None:
         f"[{user_threads} user thread(s) × {synth_workers} synthesis worker(s)]\n"
     )
 
-    def _run_user(prefix: str) -> None:
+    def _run_user(prefix: str) -> int:
         try:
-            process_user(prefix, args.dry_run, synth_workers)
+            return process_user(prefix, args.dry_run, synth_workers)
         except Exception as exc:  # noqa: BLE001
             print(f"  [error] unhandled exception for {prefix}: {exc}")
+            return 1
 
     if user_threads > 1:
         with ThreadPoolExecutor(max_workers=user_threads) as pool:
-            list(pool.map(_run_user, prefixes))
+            total_failed = sum(pool.map(_run_user, prefixes))
     else:
-        for prefix in prefixes:
-            _run_user(prefix)
+        total_failed = sum(_run_user(p) for p in prefixes)
 
     print("\n══ Done ══")
+    if total_failed:
+        sys.exit(f"{total_failed} synthesis failure(s) – see FAILED lines above")
 
 
 if __name__ == "__main__":
