@@ -161,6 +161,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
         const cached: Row[] = JSON.parse(raw);
         if (Array.isArray(cached) && cached.length > 0) {
           const srows = withTrailing(cached.map(r => mkRow(r.word, r.sentences)));
+          suppressSaveRef.current = true;
           setRows(srows);
           const cleaned = cleanRows(srows);
           setWordCount(cleaned.length);
@@ -596,7 +597,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
                         }}
                         onKeyDown={e => handleKeyDown(e, ri, ci)}
                         placeholder={ci === 0 ? 'word' : `example ${ci}`}
-                        className={`w-full px-3 py-2 bg-transparent outline-none focus:bg-[var(--border-color)] resize-none overflow-hidden leading-normal ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
+                        className={`w-full px-2 py-1.5 text-base bg-transparent outline-none focus:ring-1 focus:ring-inset focus:ring-[var(--text-muted)] resize-none overflow-hidden leading-normal ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
                       />
                       {/* Icons inside cell — never block the row below */}
                       {hoveredCell === cellKey && initialText && (
