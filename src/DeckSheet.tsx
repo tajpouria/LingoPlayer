@@ -597,7 +597,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
                         }}
                         onKeyDown={e => handleKeyDown(e, ri, ci)}
                         placeholder={ci === 0 ? 'word' : `example ${ci}`}
-                        className={`w-full px-2 py-1.5 text-base bg-transparent outline-none focus:ring-1 focus:ring-inset focus:ring-[var(--text-muted)] resize-none overflow-hidden leading-normal ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
+                        className={`w-full px-2 py-1.5 text-base bg-transparent outline-none resize-none overflow-hidden leading-normal ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
                       />
                       {/* Icons inside cell — never block the row below */}
                       {hoveredCell === cellKey && initialText && (
