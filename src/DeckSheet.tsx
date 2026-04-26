@@ -85,6 +85,8 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   const isFirstEffect = useRef(true);
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Rows as last received from server — used to detect rows added by other devices
+  const serverBaseRef = useRef<Row[]>([]);
 
   const cellRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -109,11 +111,36 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
     if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
     if (!navigator.onLine) { setSyncStatus('offline'); return; }
     try {
+      let rowsToSave = cleanRows(r);
+
+      // Before writing, fetch the current server state and append any rows that were
+      // added by another device since we last loaded — prevents a stale tab from
+      // silently deleting rows that a newer session already saved.
+      try {
+        const res = await fetch(`/api/deck-data?deck=${encodeURIComponent(deckName)}`);
+        if (res.ok) {
+          const serverRows: Row[] = await res.json();
+          if (Array.isArray(serverRows) && serverRows.length > 0) {
+            const baseWords = new Set(serverBaseRef.current.map(row => row.word.trim().toLowerCase()));
+            const clientWords = new Set(rowsToSave.map(row => row.word.trim().toLowerCase()));
+            const addedElsewhere = serverRows.filter(row =>
+              row.word.trim() &&
+              !baseWords.has(row.word.trim().toLowerCase()) &&
+              !clientWords.has(row.word.trim().toLowerCase())
+            );
+            if (addedElsewhere.length > 0) {
+              rowsToSave = [...rowsToSave, ...cleanRows(addedElsewhere)];
+            }
+          }
+        }
+      } catch { /* pre-fetch failed — proceed with local rows only */ }
+
       await fetch('/api/deck-data', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck: deckName, rows: cleanRows(r) }),
+        body: JSON.stringify({ deck: deckName, rows: rowsToSave }),
       });
+      serverBaseRef.current = rowsToSave;
       isDirtyRef.current = false;
       setSyncStatus('synced');
     } catch {
@@ -185,6 +212,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
           const cleaned = cleanRows(serverRows);
           setWordCount(cleaned.length);
           setHasMissingExamples(cleaned.some(r => r.sentences.length < 3));
+          serverBaseRef.current = cleaned;
           try { localStorage.setItem(localKey, JSON.stringify(serverRows)); } catch { /* quota */ }
           // Push server content into already-mounted textareas
           requestAnimationFrame(() => {
@@ -243,15 +271,12 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
       if (syncTimerRef.current)  clearTimeout(syncTimerRef.current);
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       if (isDirtyRef.current) {
-        fetch('/api/deck-data', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deck: deckName, rows: cleanRows(readRows()) }),
-        }).catch(() => {});
+        // State updates inside syncToServer will silently no-op after unmount — that's fine
+        syncToServer(readRows());
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deckName]);
+  }, [deckName, syncToServer]);
 
   // ── TTS ──────────────────────────────────────────────────────────────────────
 
@@ -507,11 +532,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
             if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
             const current = readRows();
             if (isDirtyRef.current) {
-              fetch('/api/deck-data', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ deck: deckName, rows: cleanRows(current) }),
-              }).catch(() => {});
+              syncToServer(current);
             }
             onBack(cleanRows(current));
           }}
