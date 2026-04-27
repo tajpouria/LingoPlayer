@@ -59,6 +59,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   // Typed content lives in the textarea DOM nodes — React never touches them while typing.
   const [rows, setRows] = useState<SRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isReady, setIsReady] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'offline' | 'error'>('synced');
   const [showSaved, setShowSaved] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
@@ -195,7 +196,6 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
           const cleaned = cleanRows(srows);
           setWordCount(cleaned.length);
           setHasMissingExamples(cleaned.some(r => r.sentences.length < 3));
-          setLoading(false);
         }
       }
     } catch { /* corrupt cache */ }
@@ -440,14 +440,15 @@ Only include the words listed in the "missing" section above. Keep my existing e
     el.style.height = `${el.scrollHeight}px`;
   }
 
-  // Resize all cells then scroll to the trailing row once initial data lands
+  // Resize all cells, scroll to bottom, then reveal the sheet
   useEffect(() => {
     if (!loading) {
       requestAnimationFrame(() => {
         cellRefs.current.forEach(el => autoResize(el));
-        // Second frame: scroll after heights are settled
+        // Second frame: scroll after heights are settled, then reveal
         requestAnimationFrame(() => {
           scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+          setIsReady(true);
         });
       });
     }
@@ -531,16 +532,66 @@ Only include the words listed in the "missing" section above. Keep my existing e
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[var(--bg-primary)]">
-        <Loader2 className="w-5 h-5 animate-spin text-[var(--text-muted)]" />
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
+    <>
+      {/* Skeleton overlay — covers the screen until the sheet is fully loaded and resized */}
+      {!isReady && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-primary)]">
+          <div className="px-6 py-4 flex justify-between items-center border-b border-[var(--border-color)]">
+            <div className="h-4 w-12 rounded bg-[var(--text-muted)] opacity-20 animate-pulse" />
+            <div className="flex items-center gap-4">
+              <div className="h-3 w-24 rounded bg-[var(--text-muted)] opacity-20 animate-pulse" />
+              <div className="h-3 w-14 rounded bg-[var(--text-muted)] opacity-20 animate-pulse" />
+            </div>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <table className="w-full border-collapse text-sm table-fixed">
+              <colgroup>
+                <col style={{ width: '2.5rem' }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '27.3%' }} />
+                <col style={{ width: '27.3%' }} />
+                <col style={{ width: '27.3%' }} />
+                <col style={{ width: '2.5rem' }} />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-[var(--border-color)]">
+                  <th className="border-r border-[var(--border-color)] py-2" />
+                  {HEADERS.map((_, ci) => (
+                    <th key={ci} className="border-r border-[var(--border-color)] px-3 py-2 text-left">
+                      <div className="h-2.5 w-14 rounded bg-[var(--text-muted)] opacity-20 animate-pulse" />
+                    </th>
+                  ))}
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 14 }).map((_, i) => (
+                  <tr key={i} className="border-b border-[var(--border-color)]">
+                    <td className="border-r border-[var(--border-color)] py-3 text-center">
+                      <div className="h-2.5 w-4 rounded bg-[var(--text-muted)] opacity-10 animate-pulse mx-auto" />
+                    </td>
+                    {[0, 1, 2, 3].map(ci => (
+                      <td key={ci} className="border-r border-[var(--border-color)] px-3 py-3">
+                        <div
+                          className="h-4 rounded bg-[var(--text-muted)] opacity-10 animate-pulse"
+                          style={{
+                            width: `${[55, 72, 80, 65, 75, 50, 84, 60, 70, 68, 78, 58, 74, 62][i % 14] + ci * 4}%`,
+                            animationDelay: `${((i * 4 + ci) * 60) % 500}ms`,
+                          }}
+                        />
+                      </td>
+                    ))}
+                    <td />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+    <div className={`flex flex-col min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]${!isReady ? ' invisible' : ''}`}>
       <audio ref={audioRef} className="hidden" />
 
       <header className="sticky top-0 z-10 px-6 py-4 flex justify-between items-center border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
@@ -789,5 +840,6 @@ Only include the words listed in the "missing" section above. Keep my existing e
         )}
       </AnimatePresence>
     </div>
+    </>
   );
 }
