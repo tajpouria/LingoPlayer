@@ -6,7 +6,7 @@ interface Props {
   totalDays: number;
 }
 
-export default function ActivityHeatmap({ activity, streak, totalDays }: Props) {
+export default function ActivityHeatmap({ activity, totalDays }: Props) {
   // Build a grid of the last 52 weeks (columns) × 7 days (rows).
   // Align so the rightmost column ends on today.
   const today = new Date();
@@ -97,7 +97,6 @@ export default function ActivityHeatmap({ activity, streak, totalDays }: Props) 
       </div>
 
       <div className="mt-3 flex gap-5 text-xs text-[var(--text-muted)]">
-        <span>{streak} day streak</span>
         <span>{totalDays} active days</span>
       </div>
     </div>
