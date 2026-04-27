@@ -63,6 +63,8 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   const [showSaved, setShowSaved] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [wordCount, setWordCount] = useState(0);
+  // ri -> ri of the first occurrence of the same word
+  const [duplicateErrors, setDuplicateErrors] = useState<Map<number, number>>(new Map());
 
   // Cell hover popup
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
@@ -418,6 +420,21 @@ Only include the words listed in the "missing" section above. Keep my existing e
 
   // ── Cell helpers ──────────────────────────────────────────────────────────────
 
+  function checkDuplicates() {
+    const wordMap = new Map<string, number>();
+    const errors = new Map<number, number>();
+    rowsRef.current.forEach((row, ri) => {
+      const word = (cellRefs.current.get(`${ri}:0`)?.value ?? row.word).trim().toLowerCase();
+      if (!word) return;
+      if (wordMap.has(word)) {
+        errors.set(ri, wordMap.get(word)!);
+      } else {
+        wordMap.set(word, ri);
+      }
+    });
+    setDuplicateErrors(errors);
+  }
+
   function autoResize(el: HTMLTextAreaElement) {
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
@@ -474,7 +491,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
       const current = readRows();
       const filtered = current.length === 1 ? [mkRow()] : current.filter((_, i) => i !== ri);
       setRows(withTrailing(filtered));
-      setTimeout(() => focusCell(Math.max(0, ri - 1), 0), 0);
+      setTimeout(() => { focusCell(Math.max(0, ri - 1), 0); checkDuplicates(); }, 0);
     } else {
       setDeleteTarget(ri);
     }
@@ -487,7 +504,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
     const current = readRows();
     const filtered = current.length === 1 ? [mkRow()] : current.filter((_, i) => i !== ri);
     setRows(withTrailing(filtered));
-    setTimeout(() => focusCell(Math.max(0, ri - 1), 0), 0);
+    setTimeout(() => { focusCell(Math.max(0, ri - 1), 0); checkDuplicates(); }, 0);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>, ri: number, ci: number) {
@@ -610,6 +627,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
                         onChange={e => {
                           autoResize(e.target);
                           scheduleSave();
+                          if (ci === 0) checkDuplicates();
                           // Auto-grow: append a trailing empty row the first time
                           // the user types anything into the last (placeholder) row
                           if (ri === rows.length - 1 && e.target.value.trim()) {
@@ -618,8 +636,13 @@ Only include the words listed in the "missing" section above. Keep my existing e
                         }}
                         onKeyDown={e => handleKeyDown(e, ri, ci)}
                         placeholder={ci === 0 ? 'word' : `example ${ci}`}
-                        className={`w-full px-2 py-1.5 text-base bg-transparent outline-none resize-none overflow-hidden leading-normal ${ci === 0 ? 'font-medium' : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
+                        className={`w-full px-2 py-1.5 text-base bg-transparent outline-none resize-none overflow-hidden leading-normal ${ci === 0 ? `font-medium ${duplicateErrors.has(ri) ? 'text-red-500' : ''}` : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
                       />
+                      {ci === 0 && duplicateErrors.has(ri) && (
+                        <p className="px-2 pb-1.5 text-xs text-red-500 leading-tight">
+                          Already exists at row {duplicateErrors.get(ri)! + 1}
+                        </p>
+                      )}
                       {/* Icons inside cell — never block the row below */}
                       {hoveredCell === cellKey && initialText && (
                         <div
