@@ -53,7 +53,7 @@ export default function LoginForm({ onLoggedIn }: { onLoggedIn: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 p-6">
       <div className="max-w-sm w-full">
-        <h1 className="text-2xl font-bold text-center mb-2">LingoPlayer</h1>
+        <h1 className="text-2xl font-bold text-center mb-2">Carnet</h1>
         <p className="text-zinc-500 text-center mb-8">
           {step === 'email' ? 'Sign in with your email' : 'Enter the code sent to your email'}
         </p>

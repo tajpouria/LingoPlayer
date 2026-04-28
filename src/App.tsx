@@ -642,7 +642,7 @@ export default function App() {
           {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
         <div className="w-full max-w-sm">
-          <p className="font-serif text-4xl font-normal text-center mb-2">LingoPlayer</p>
+          <p className="font-serif text-4xl font-normal text-center mb-2">Carnet</p>
           <p className="text-[var(--text-muted)] text-center text-base mb-10">Select a deck</p>
 
           {decksLoading ? (

@@ -1,4 +1,4 @@
-# LingoPlayer (crappy name, I know)
+# Carnet
 
 a language learning tool I built because there’s nothing like it out there. I use it to learn Dutch and it works for me.
 
@@ -6,7 +6,7 @@ a language learning tool I built because there’s nothing like it out there. I 
 
 you add words to a deck. each word can have example sentences. the app plays them back to you on a schedule ([Leitner boxes](https://en.wikipedia.org/wiki/Leitner_system)). audio is the primary interface.
 
-there's also a "Recall" mode where you get a prompt to paste into Claude/Gemeni/... and it asks you to translate sentences out loud. you paste the result back and the app records which sentences you learned correctly. (bc fuck paying for their API)
+there's also a "Recall" mode where you get a prompt to paste into Claude/Gemeni/... and it asks you to translate sentences out loud. you paste the result back and the app records which sentences you learned correctly. (fuck paying for their API)
 
 everything is files in S3.
 

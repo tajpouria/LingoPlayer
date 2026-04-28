@@ -80,6 +80,7 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [promptCopied, setPromptCopied] = useState(false);
   const [applySuccess, setApplySuccess] = useState(false);
+  const [applyLoading, setApplyLoading] = useState(false);
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -364,8 +365,10 @@ Only include the words listed in the "missing" section above. Keep my existing e
     } catch { /* ignore */ }
   }
 
-  function applyGenerated() {
+  async function applyGenerated() {
     setGenerateError(null);
+    setApplyLoading(true);
+    await new Promise(r => setTimeout(r, 0));
     try {
       let jsonStr = generatePaste.trim();
       const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
@@ -415,6 +418,8 @@ Only include the words listed in the "missing" section above. Keep my existing e
       }, 1500);
     } catch (e) {
       setGenerateError((e as Error).message);
+    } finally {
+      setApplyLoading(false);
     }
   }
 
@@ -824,10 +829,14 @@ Only include the words listed in the "missing" section above. Keep my existing e
                       )}
                       <button
                         onClick={applyGenerated}
-                        disabled={!generatePaste.trim() || applySuccess}
+                        disabled={!generatePaste.trim() || applyLoading || applySuccess}
                         className="text-sm underline text-[var(--text-primary)] disabled:opacity-30 flex items-center gap-1.5 transition-opacity"
                       >
-                        {applySuccess ? <><Check className="w-4 h-4" /> Applied</> : 'Apply to sheet'}
+                        {applyLoading
+                          ? <><Loader2 className="w-4 h-4 animate-spin" /> Applying…</>
+                          : applySuccess
+                          ? <><Check className="w-4 h-4" /> Applied</>
+                          : 'Apply to sheet'}
                       </button>
                     </div>
                   </>

@@ -12,7 +12,7 @@ export async function sendOtp(to: string, code: string): Promise<void> {
   await transporter.sendMail({
     from: env.emailFrom,
     to,
-    subject: 'Your LingoPlayer login code',
+    subject: 'Your Carnet login code',
     text: `Your OTP code is: ${code}\n\nIt expires in 5 minutes.`,
   });
 }

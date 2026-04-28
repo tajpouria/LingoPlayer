@@ -1,12 +1,25 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import '@/src/index.css';
 import { DarkModeProvider } from '@/src/DarkModeProvider';
 
+export const viewport: Viewport = {
+  themeColor: '#f9f7f4',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
+
 export const metadata: Metadata = {
-  title: 'LingoPlayer',
+  title: 'Carnet',
   referrer: 'no-referrer',
+  appleWebApp: {
+    capable: true,
+    title: 'Carnet',
+    statusBarStyle: 'default',
+  },
   icons: {
-    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🎧</text></svg>',
+    icon: '/icon.svg',
+    apple: '/icon.svg',
   },
 };
 
