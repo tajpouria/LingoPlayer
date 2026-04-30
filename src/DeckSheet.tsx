@@ -69,8 +69,10 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
 
   // Cell hover popup
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
+  const [hoveredCellText, setHoveredCellText] = useState<string>('');
   const [translationCache, setTranslationCache] = useState<Record<string, string>>({});
   const [translatingText, setTranslatingText] = useState<string | null>(null);
+  const hoverSessionRef = useRef(0);
 
   // Generate-examples modal
   const [showGenerateModal, setShowGenerateModal] = useState(false);
@@ -302,7 +304,8 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   // ── Translate ─────────────────────────────────────────────────────────────────
 
   async function translateCell(text: string) {
-    if (translationCache[text] || translatingText === text) return;
+    if (!text.trim() || translatingText === text) return;
+    const mySession = hoverSessionRef.current;
     setTranslatingText(text);
     try {
       const res = await fetch('/api/translate', {
@@ -311,11 +314,17 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
         body: JSON.stringify({ text, to: 'en' }),
       });
       const data = await res.json() as { translation?: string };
-      setTranslationCache(prev => ({ ...prev, [text]: data.translation ?? 'Translation failed' }));
+      if (hoverSessionRef.current === mySession) {
+        setTranslationCache(prev => ({ ...prev, [text]: data.translation ?? 'Translation failed' }));
+      }
     } catch {
-      setTranslationCache(prev => ({ ...prev, [text]: 'Translation failed' }));
+      if (hoverSessionRef.current === mySession) {
+        setTranslationCache(prev => ({ ...prev, [text]: 'Translation failed' }));
+      }
     } finally {
-      setTranslatingText(null);
+      if (hoverSessionRef.current === mySession) {
+        setTranslatingText(null);
+      }
     }
   }
 
@@ -672,8 +681,21 @@ Only include the words listed in the "missing" section above. Keep my existing e
                     <td
                       key={ci}
                       className={`border-r border-[var(--border-color)] p-0 relative transition-shadow ${hoveredCell === cellKey ? 'ring-1 ring-inset ring-[var(--text-muted)]' : ''}`}
-                      onMouseEnter={() => setHoveredCell(cellKey)}
-                      onMouseLeave={() => setHoveredCell(null)}
+                      onMouseEnter={() => {
+                        hoverSessionRef.current++;
+                        setHoveredCell(cellKey);
+                        setHoveredCellText(cellRefs.current.get(cellKey)?.value ?? initialText);
+                      }}
+                      onMouseLeave={() => {
+                        hoverSessionRef.current++;
+                        const text = cellRefs.current.get(cellKey)?.value ?? initialText;
+                        if (text) {
+                          setTranslationCache(prev => { const n = { ...prev }; delete n[text]; return n; });
+                        }
+                        setHoveredCell(null);
+                        setHoveredCellText('');
+                        setTranslatingText(null);
+                      }}
                     >
                       {/* Uncontrolled — React never re-renders this textarea on typing */}
                       <textarea
@@ -689,6 +711,10 @@ Only include the words listed in the "missing" section above. Keep my existing e
                           if (ri === rows.length - 1 && e.target.value.trim()) {
                             setRows(prev => [...prev, mkRow()]);
                           }
+                          // Keep hoveredCellText in sync while typing in the hovered cell
+                          if (hoveredCell === cellKey) {
+                            setHoveredCellText(e.target.value);
+                          }
                         }}
                         onKeyDown={e => handleKeyDown(e, ri, ci)}
                         placeholder={ci === 0 ? 'word' : `example ${ci}`}
@@ -700,36 +726,36 @@ Only include the words listed in the "missing" section above. Keep my existing e
                         </p>
                       )}
                       {/* Icons inside cell — never block the row below */}
-                      {hoveredCell === cellKey && initialText && (
+                      {hoveredCell === cellKey && hoveredCellText && (
                         <div
                           className="absolute right-0 top-0 bottom-0 flex items-center gap-0.5 pr-1 pointer-events-none z-10"
                           style={{ background: 'linear-gradient(to right, transparent, var(--bg-primary) 35%)' }}
                         >
                           <button
-                            onMouseDown={e => { e.preventDefault(); speak(cellRefs.current.get(cellKey)?.value ?? initialText); }}
+                            onMouseDown={e => { e.preventDefault(); speak(hoveredCellText); }}
                             className="pointer-events-auto p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                             title="Listen"
                           >
                             <Volume2 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onMouseDown={e => { e.preventDefault(); translateCell(cellRefs.current.get(cellKey)?.value ?? initialText); }}
+                            onMouseDown={e => { e.preventDefault(); translateCell(hoveredCellText); }}
                             className="pointer-events-auto p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                             title="Translate"
                           >
-                            {translatingText === (cellRefs.current.get(cellKey)?.value ?? initialText)
+                            {translatingText === hoveredCellText
                               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               : <Languages className="w-3.5 h-3.5" />}
                           </button>
                         </div>
                       )}
-                      {/* Translation result — only after Translate is clicked */}
-                      {hoveredCell === cellKey && translationCache[cellRefs.current.get(cellKey)?.value ?? initialText] && (
+                      {/* Translation result — only after Translate is clicked; cleared on mouse-leave */}
+                      {hoveredCell === cellKey && translationCache[hoveredCellText] && (
                         <div
                           className="absolute left-0 top-full z-30 bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-md px-3 py-2 text-xs text-[var(--text-secondary)] leading-relaxed"
                           style={{ minWidth: '100%', width: 'max-content', maxWidth: '320px' }}
                         >
-                          {translationCache[cellRefs.current.get(cellKey)?.value ?? initialText]}
+                          {translationCache[hoveredCellText]}
                         </div>
                       )}
                     </td>
