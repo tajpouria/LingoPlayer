@@ -718,7 +718,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
                         }}
                         onKeyDown={e => handleKeyDown(e, ri, ci)}
                         placeholder={ci === 0 ? 'word' : `example ${ci}`}
-                        className={`w-full px-2 py-1.5 text-base bg-transparent outline-none resize-none overflow-hidden leading-normal ${ci === 0 ? `font-medium ${duplicateErrors.has(ri) ? 'text-red-500' : ''}` : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40`}
+                        className={`w-full px-2 py-1.5 text-base bg-transparent outline-none resize-none overflow-hidden leading-normal ${ci === 0 ? `font-medium ${duplicateErrors.has(ri) ? 'text-red-500' : ''}` : 'text-[var(--text-secondary)]'} placeholder:text-[var(--text-muted)] placeholder:opacity-40 ${hoveredCell === cellKey && hoveredCellText ? 'pr-14' : ''}`}
                       />
                       {ci === 0 && duplicateErrors.has(ri) && (
                         <p className="px-2 pb-1.5 text-xs text-red-500 leading-tight">
