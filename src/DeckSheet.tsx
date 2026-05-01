@@ -74,6 +74,12 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   const [translatingText, setTranslatingText] = useState<string | null>(null);
   const hoverSessionRef = useRef(0);
 
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 640
+  );
+  const [focusedCell, setFocusedCell] = useState<string | null>(null);
+  const blurTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Generate-examples modal
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [computedPrompt, setComputedPrompt] = useState<string | null>(null);
@@ -272,9 +278,18 @@ export default function DeckSheet({ deckName, lang, onBack }: DeckSheetProps) {
   // ── Flush on unmount ──────────────────────────────────────────────────────────
 
   useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (syncTimerRef.current)  clearTimeout(syncTimerRef.current);
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (blurTimerRef.current)  clearTimeout(blurTimerRef.current);
       if (isDirtyRef.current) {
         // State updates inside syncToServer will silently no-op after unmount — that's fine
         syncToServer(readRows());
@@ -608,7 +623,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
     <div className={`flex flex-col min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]${!isReady ? ' invisible' : ''}`}>
       <audio ref={audioRef} className="hidden" />
 
-      <header className="sticky top-0 z-10 px-6 py-4 flex justify-between items-center border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
+      <header className="sticky top-0 z-10 px-3 sm:px-6 py-3 sm:py-4 flex justify-between items-center border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
         <button
           onClick={() => {
             if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -622,7 +637,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
         >
           ← Back
         </button>
-        <div className="flex items-center gap-4 text-sm text-[var(--text-muted)]">
+        <div className="flex items-center gap-2 sm:gap-4 text-sm text-[var(--text-muted)]">
           <button
             onClick={toggleDarkMode}
             className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
@@ -636,7 +651,7 @@ Only include the words listed in the "missing" section above. Keep my existing e
               className="flex items-center gap-1.5 hover:text-[var(--text-primary)] transition-colors"
             >
               <Wand2 className="w-3.5 h-3.5" />
-              <span>Generate examples</span>
+              <span className="hidden sm:inline">Generate examples</span>
             </button>
           )}
           <span>{wordCount} word{wordCount !== 1 ? 's' : ''}</span>
