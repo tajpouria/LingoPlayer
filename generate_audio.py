@@ -129,7 +129,7 @@ LANGUAGE_MODELS: dict[str, str] = {
     "nl": "nl_NL-ronnie-medium",
     "en": "en_US-lessac-medium",
     "es": "es_ES-mls-medium",
-    "fr": "fr_FR-mls-medium",
+    "fr": "fr_FR-tom-medium.onnx",
     "de": "de_DE-thorsten-medium",
     "it": "it_IT-riccardo-x_low",
     "pt": "pt_BR-faber-medium",
