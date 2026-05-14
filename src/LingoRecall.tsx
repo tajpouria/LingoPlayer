@@ -125,48 +125,67 @@ I want to practice my ${languageName} writing through active recall. I will prov
 
 Here is how our session will work:
 
-You will silently translate the Dutch example sentences into English.
+1. You will silently translate the ${languageName} example sentences into English.
+2. You will pick one sentence at random and present me with the English translation, along with the required ${languageName} target word. (Example: Translate: "I use a blue pen." | Required word: gebruiken)
+3. I will type (or dictate) my ${languageName} translation.
+4. You will evaluate my translation according to the criteria below.
+5. Based on the evaluation, you will respond using the taxonomy below.
 
-You will pick one sentence at random and present me with the English translation, along with the required Dutch target word. (Example: Translate: "I use a blue pen." | Required word: gebruiken)
+## Input format — ignore these
 
-I will type my Dutch translation.
+I am using speech-to-text to enter my answers. The following are NOT part of the evaluation and must be ignored:
 
-You will evaluate my translation.
+- **Punctuation** (commas, periods, question marks, exclamation marks, quotation marks). Do not flag missing or extra punctuation. Do not ask me to retry because of a missing comma.
+- **Capitalization** (sentence-initial capitals, capitals after periods). Do not flag lowercase where uppercase is expected, or vice versa.
 
-Did I use the target word correctly?
+Before evaluating, silently normalize my input: convert to lowercase and remove sentence-level punctuation. Evaluate the normalized version.
 
-Is the grammar, spelling, and word order correct?
+The ONE exception: capitalization that is part of ${languageName} spelling itself (e.g. proper nouns, or in German, all nouns). If a word is mis-spelled because the wrong case is part of the spelling, you may note it — but never flag sentence-level capitalization or punctuation.
 
-If I am correct, praise me briefly and give me the next sentence.
+Evaluate only the words themselves: target word usage, grammar, word order, spelling of the words, and meaning.
 
-If I make a mistake, gently explain the error, give me a hint, and ask me to try translating that same sentence again. Keep asking until I get it right.
+## Evaluation criteria
 
-Keep track of the sentences I struggle with and ask them again later in the session.
+A translation is **correct** if all three hold:
+- (a) The target word is used correctly.
+- (b) The grammar, spelling, and word order are valid ${languageName}.
+- (c) The meaning matches the English prompt.
 
-Rules:
+I do **not** need to match the original example sentence word-for-word. Synonyms, alternative phrasings, and stylistic variations are all acceptable as long as the sentence is natural ${languageName} and preserves the meaning. Only flag a word choice as wrong if it is actually incorrect, unnatural, or changes the meaning — not merely because it differs from the source sentence.
 
-Only ask me ONE sentence at a time.
+## How to respond
 
-Wait for my answer before moving on.
+Classify my answer into one of these categories and respond accordingly:
 
-Do not give me the ${languageName} answer unless I fail three times or ask for the solution.
+- **Correct and matches the example** → Praise me briefly and move to the next sentence.
+- **Correct but different from the example** (e.g. I wrote "erg licht" where the example had "heel licht") → Accept it as correct, briefly note the original phrasing as an FYI ("Also correct — the example used 'heel licht', but 'erg licht' works equally well"), and move on. Do NOT ask me to retry.
+- **Awkward but not wrong** (grammatical, understandable, but unnatural phrasing) → Accept it, give a brief stylistic note on a more natural alternative, and move on. Do NOT ask me to retry.
+- **Wrong** (grammar is broken, target word is misused or missing, or the meaning is off) → Gently explain the error, give me a hint, and ask me to try translating the same sentence again. Keep asking until I get it right.
 
-After each sentence (whether correct or not), show a progress line: e.g. "Progress: 3 / 25 done, 22 left."
+Keep track of the sentences I struggle with (any sentence I did not get correct on the first try) and ask them again later in the session.
 
-IMPORTANT: Always communicate with me in English. All instructions, feedback, hints, and explanations must be in English.
+## Rules
+
+- Only ask me ONE sentence at a time.
+- Wait for my answer before moving on.
+- Do not give me the ${languageName} answer unless I fail three times or ask for the solution.
+- After each sentence (whether correct or not), show a progress line: e.g. "Progress: 3 / 25 done, 22 left."
+- IMPORTANT: Always communicate with me in English. All instructions, feedback, hints, and explanations must be in English.
 
 Practice all ${dailySentences.length} sentences. Start immediately with the first one.
+
+## End of session
 
 At the END of the session, output a JSON summary:
 \`\`\`json
 {"sentencesAsked":0,"masteredSentences":[]}
 \`\`\`
-Use the sentence IDs in brackets below for masteredSentences (sentences I got correct on the first try). Set sentencesAsked to the total number of unique sentences presented in the session (not counting retries).
+Use the sentence IDs in brackets below for masteredSentences (sentences I got correct on the first try, including "correct but different from the example"). Set sentencesAsked to the total number of unique sentences presented in the session (not counting retries).
 
 Here is my data:
 
 ${sentencesList}`;
-  }, [dailySentences, data]);
+}, [dailySentences, data]);
 
   // ── Fetch recall state ────────────────────────────────────────────────────
 
