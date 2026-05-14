@@ -1010,6 +1010,7 @@ export default function App() {
     return (
       <LingoRecall
         deckName={decks[selectedDeckIndex].name}
+        lang={decks[selectedDeckIndex].lang}
         data={data}
         srs={srs}
         dailyRecallLimit={decks[selectedDeckIndex].dailyRecallLimit ?? DEFAULT_DAILY_RECALL_LIMIT}

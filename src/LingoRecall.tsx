@@ -37,8 +37,15 @@ interface RecallState {
   sessionHistory: SessionResult[];
 }
 
+const LANGUAGE_NAMES: Record<string, string> = {
+  nl: 'Dutch', en: 'English', es: 'Spanish', fr: 'French',
+  de: 'German', it: 'Italian', pt: 'Portuguese', ja: 'Japanese',
+  ko: 'Korean', zh: 'Chinese',
+};
+
 interface LingoRecallProps {
   deckName: string;
+  lang: string;
   data: Row[];
   srs: DeckSRS;
   dailyRecallLimit?: number;
@@ -58,7 +65,8 @@ function sentenceId(word: string, sentenceIndex: number): string {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function LingoRecall({ deckName, data, srs, dailyRecallLimit = 10, onBack }: LingoRecallProps) {
+export default function LingoRecall({ deckName, lang, data, srs, dailyRecallLimit = 10, onBack }: LingoRecallProps) {
+  const languageName = LANGUAGE_NAMES[lang] ?? lang;
   const { isDark: _isDark } = useDarkMode();
   const [recallState, setRecallState] = useState<RecallState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,9 +119,9 @@ export default function LingoRecall({ deckName, data, srs, dailyRecallLimit = 10
       `- ${s.word}: "${s.sentence}" [${s.word}::${data.find(r => r.word === s.word)?.sentences.indexOf(s.sentence)}]`
     ).join('\n');
 
-    return `Act as my strict but encouraging Dutch Language Tutor.
+    return `Act as my strict but encouraging ${languageName} Language Tutor.
 
-I want to practice my Dutch writing through active recall. I will provide you with a vocabulary list where each target word is followed by a few example sentences in Dutch.
+I want to practice my ${languageName} writing through active recall. I will provide you with a vocabulary list where each target word is followed by a few example sentences in ${languageName}.
 
 Here is how our session will work:
 
@@ -141,7 +149,7 @@ Only ask me ONE sentence at a time.
 
 Wait for my answer before moving on.
 
-Do not give me the Dutch answer unless I fail three times or ask for the solution.
+Do not give me the ${languageName} answer unless I fail three times or ask for the solution.
 
 After each sentence (whether correct or not), show a progress line: e.g. "Progress: 3 / 25 done, 22 left."
 
